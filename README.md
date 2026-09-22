@@ -1,9 +1,10 @@
 # ControlTower Private
 
-A review fork of ControlTower with provider-owned sign-in and a sandboxed quota dashboard. **Partial: actual Claude quota display is verified. Codex and Gemini adapters are implemented; their account enrollment and dashboard acceptance are still pending.**
+A review fork of ControlTower with provider-owned sign-in and a sandboxed quota dashboard. **Partial: actual Claude quota display is verified. Codex, Gemini and Grok adapters are implemented; their account enrollment and dashboard acceptance are still pending.**
 
 - **Claude:** official statusLine quota fields → bounded quota-only local feed. Preserves existing statusLine; user reviews/applies setup. No token copying.
 - **Codex:** user-started local helper → official signed Codex device login and `account/rateLimits/read` → quota-only feed. Separate provider home, Keychain-only requested, manual refresh, no model calls.
+- **Grok:** user-owned official CLI sign-in and `/usage` SuperGrok weekly display → strict quota-only feed. Live screen compatibility remains pending.
 - **Gemini:** user-owned official CLI sign-in and interactive `/model` screen → strict quota-only feed. Rounded tier percentages and estimated resets; no generated model prompts.
 - Other providers retain explanatory unavailable states and optional explicit aggregate token-count imports. Imports are not subscription quotas.
 
