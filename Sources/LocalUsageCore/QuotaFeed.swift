@@ -5,7 +5,7 @@ public enum QuotaFeed {
     public static let maxBytes = 8192
     public static let staleAfter: TimeInterval = 300
     public static func decode(_ data: Data, provider: Provider, now: Date = Date()) throws -> QuotaSnapshot {
-        guard data.count <= maxBytes, [.claude, .codex].contains(provider),
+        guard data.count <= maxBytes, [.claude, .codex, .gemini].contains(provider),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(root.keys) == ["version", "provider", "observedAt", "windows"],
               let version = root["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version == 1,
@@ -14,7 +14,7 @@ public enum QuotaFeed {
               stamp.doubleValue.isFinite, stamp.doubleValue > 0, stamp.doubleValue <= now.timeIntervalSince1970 + 30,
               let rows = root["windows"] as? [[String: Any]], rows.count <= 8 else { throw SafeError.format }
         var seen: Set<String> = []
-        let allowedIDs = provider == .claude ? ["Session", "Weekly"] : ["Primary", "Secondary"]
+        let allowedIDs = provider == .claude ? ["Session", "Weekly"] : provider == .codex ? ["Primary", "Secondary"] : ["Pro", "Flash", "Flash Lite"]
         let windows = try rows.map { row -> QuotaWindow in
             guard Set(row.keys).isSubset(of: ["id", "usedPercent", "resetsAt"]),
                   let id = row["id"] as? String, allowedIDs.contains(id),

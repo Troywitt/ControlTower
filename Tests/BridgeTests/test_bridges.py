@@ -12,12 +12,21 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "Bridges"))
 from quota_feed import claude_feed, codex_feed, publish
 from prepare_claude import prepare
-from codex_quota import RPC, launch
+from codex_quota import RPC, launch, acquire_feed_lock
 from claude_diagnostic import record, shape
 import time
 
 
 class BridgeTests(unittest.TestCase):
+    def test_codex_single_writer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            first = acquire_feed_lock(root)
+            try:
+                with self.assertRaises(BlockingIOError): acquire_feed_lock(root)
+            finally: first.close()
+            acquire_feed_lock(root).close()
+
     def test_diagnostic_exports_only_fixed_shapes(self):
         secret = "SECRET_SENTINEL_PROMPT_PATH_TOKEN"
         payload = {secret: secret, "rate_limits": {"five_hour": {
@@ -118,6 +127,19 @@ for line in sys.stdin:
         finally: rpc.close()
         self.assertIsNotNone(rpc.process.poll())
 
+    def test_cleanup_reaps_exited_child_without_signalling(self):
+        rpc = self.fake('raise SystemExit(1)')
+        rpc.process.wait(timeout=3)
+        with patch("codex_quota.os.killpg") as kill:
+            rpc.close()
+            kill.assert_not_called()
+
+    def test_cleanup_group_denial_falls_back_to_owned_child(self):
+        rpc = self.fake('import time; time.sleep(20)')
+        with patch("codex_quota.os.killpg", side_effect=PermissionError):
+            rpc.close()
+        self.assertIsNotNone(rpc.process.poll())
+
     def test_timeout_and_server_request_fail_closed(self):
         for script in ('import time; time.sleep(20)', 'import sys; sys.stdout.write(\'{"id":9,"method":"exec"}\\n\'); sys.stdout.flush(); import time; time.sleep(20)'):
             rpc = self.fake(script)
@@ -169,6 +191,7 @@ import time; time.sleep(20)
             self.assertNotIn("PRIVATE", json.dumps(kwargs["env"]))
             self.assertNotIn("/existing/private", json.dumps(kwargs["env"]))
             self.assertTrue(kwargs["start_new_session"])
+            self.assertTrue(Path(kwargs["env"]["CODEX_HOME"]).is_dir())
 
     def test_login_notification_flood_cancels(self):
         script = '''import sys,json

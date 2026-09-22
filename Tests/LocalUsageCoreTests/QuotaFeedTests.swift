@@ -18,6 +18,16 @@ import Testing
         let result = try QuotaFeed.decode(data(["windows": []]), provider: .claude, now: Date(timeIntervalSince1970: 1000))
         #expect(result.windows.isEmpty)
     }
+    @Test func geminiTierAllowlistAndStaleness() throws {
+        let valid = try data(["provider": "gemini", "windows": [["id": "Pro", "usedPercent": 33, "resetsAt": 2000]]])
+        let result = try QuotaFeed.decode(valid, provider: .gemini, now: Date(timeIntervalSince1970: 1400))
+        #expect(result.windows.first?.id == "Pro")
+        #expect(result.windows.first?.usedPercent == 33)
+        #expect(Date(timeIntervalSince1970: 1400).timeIntervalSince(result.fetchedAt) > QuotaFeed.staleAfter)
+        #expect(throws: SafeError.self) {
+            try QuotaFeed.decode(data(["provider": "gemini", "windows": [["id": "Secret", "usedPercent": 1]]]), provider: .gemini)
+        }
+    }
     @Test func wrongProviderExtraFieldsFutureAndBooleansRejected() throws {
         for changes: [String: Any] in [["provider": "codex"], ["token": "synthetic-secret"], ["observedAt": 100000],
                                       ["observedAt": true], ["windows": [["id": "Session", "usedPercent": true]]],

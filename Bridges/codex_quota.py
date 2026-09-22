@@ -5,6 +5,7 @@ No shell, token-file access, generic RPC entry point, model turns, or socket ser
 Run in a private terminal; do not record the device code during sign-in.
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -19,6 +20,17 @@ from quota_feed import MAX_INPUT, codex_feed, envelope, private_dir, publish
 
 ALLOWED = {"initialize", "account/login/start", "account/login/cancel", "account/rateLimits/read"}
 REQUIREMENT = 'anchor apple generic and identifier "codex" and certificate leaf[subject.OU] = "2DC432GLL2"'
+
+
+def acquire_feed_lock(output):
+    fd = os.open(output / ".codex-adapter.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    lock = os.fdopen(fd, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock
+    except BaseException:
+        lock.close()
+        raise
 
 
 def verify_binary(path, expected_sha):
@@ -48,10 +60,11 @@ def launch(binary, state):
     if marker.is_symlink() or marker.read_text() != "ControlTower private Codex state v1\n":
         raise ValueError("Unrecognized adapter state")
     home = private_dir(state / "provider-home")
+    codex_home = private_dir(home / "codex")
     cwd = private_dir(state / "empty-workspace")
     # Fixed private HOME/CODEX_HOME for this child only. No inherited token,
     # proxy, provider URL, node injection, or project-config environment values.
-    env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "CODEX_HOME": str(home / "codex"),
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "CODEX_HOME": str(codex_home),
            "TMPDIR": str(private_dir(state / "tmp")), "LANG": "en_US.UTF-8"}
     return subprocess.Popen([str(binary), "-c", 'cli_auth_credentials_store="keyring"',
                              "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false",
@@ -157,16 +170,30 @@ class RPC:
 
     def close(self):
         self.selector.close()
-        self.process.stdin.close()
+        try:
+            self.process.stdin.close()
+        except OSError:
+            pass
+        # Reap an already exited child before signalling. Its old process group
+        # can cease to exist or be inaccessible; never mask the original error.
+        if self.process.poll() is not None:
+            self.process.stdout.close()
+            return
         try:
             os.killpg(self.process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        except (ProcessLookupError, PermissionError):
+            try:
+                self.process.terminate()
+            except (ProcessLookupError, PermissionError):
+                pass
         try:
             self.process.wait(timeout=3)
         except subprocess.TimeoutExpired:
-            os.killpg(self.process.pid, signal.SIGKILL)
-            self.process.wait(timeout=3)
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+                self.process.wait(timeout=3)
+            except (ProcessLookupError, PermissionError, subprocess.TimeoutExpired):
+                pass
         self.process.stdout.close()
 
 
@@ -184,35 +211,46 @@ def main():
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         parser.error("Use a private interactive terminal, not a captured tool session")
     rpc = None
+    lock = None
+    stage = "local preparation"
     try:
         output = private_dir(args.output)
         state = private_dir(args.state)
         if output == state or output in state.parents or state in output.parents:
             raise ValueError("Quota folder and provider state must be separate")
+        lock = acquire_feed_lock(output)
         binary = verify_binary(args.binary, args.sha256)
+        stage = "official provider startup"
         rpc = RPC(launch(binary, state))
         rpc.initialize()
         if args.login:
+            stage = "official device sign-in"
             print("Official Codex will store this separate login in macOS Keychain. No plaintext fallback is requested.")
             print("Provider traffic and auth refresh belong to Codex, outside the dashboard sandbox. Ctrl+C cancels.")
             rpc.login(print)
             print("Provider reported login complete.")
         while True:
+            stage = "quota read"
             publish(output, codex_feed(rpc.call("account/rateLimits/read")))
             print("Quota snapshot published. Return refreshes; q quits and stops this provider process.")
             if input().strip().lower() == "q":
                 break
-    except (Exception, KeyboardInterrupt):
+    except (Exception, KeyboardInterrupt) as error:
         # Do not expose raw provider errors, auth URLs, file contents or tracebacks.
-        print("Adapter stopped or provider operation unavailable. No token fallback was attempted.", file=sys.stderr)
+        category = "cancelled" if isinstance(error, KeyboardInterrupt) else "timeout" if isinstance(error, TimeoutError) else "unavailable"
+        print("Adapter stopped at " + stage + " (" + category + "). No token fallback was attempted.", file=sys.stderr)
         return 1
     finally:
-        if rpc:
-            rpc.close()
         try:
-            publish(args.output, envelope("codex", []))
-        except (ValueError, OSError):
-            pass
+            if rpc:
+                rpc.close()
+        finally:
+            if lock:
+                try:
+                    publish(args.output, envelope("codex", []))
+                except (ValueError, OSError):
+                    pass
+                lock.close()
     return 0
 
 

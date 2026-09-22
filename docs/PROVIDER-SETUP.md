@@ -1,6 +1,6 @@
-# Provider-owned setup (review build 0.2)
+# Provider-owned setup (review build 0.3)
 
-**Status: implementation and synthetic tests, not real-account acceptance.** Never enter a session token in ControlTower or chat. The new dashboard has no token form or network entitlement. Claude and Codex feed real provider quota observations through a dedicated local folder; this is separate from optional token-count imports. Gemini is still blocked on a defensible integration surface.
+**Status: actual Claude quota-to-dashboard acceptance passed; Codex/Gemini enrollment remains pending.** Never enter a session token in ControlTower or chat. The new dashboard has no token form or network entitlement. Claude and Codex feed real provider quota observations through a dedicated local folder; this is separate from optional token-count imports. Gemini uses strict parsing of the official interactive quota screen.
 
 ## Claude: first user step
 
@@ -15,7 +15,7 @@ python3 /Users/troywitt/AI/Code/ControlTower/Bridges/prepare_claude.py \
 
 2. Open `statusline-merge-patch.json` in that review folder. Merge **only its `statusLine` value** into your existing settings using your editor. Keep all other settings. If you have no settings file, first create an empty `{}` file yourself. The generator intentionally does not install the patch. `statusline-rollback.json` records the old value; to undo, restore it, or remove `statusLine` if the old value was null.
 3. Continue your normal signed-in Claude Code session. Its documented statusLine quota fields require a supported version (current docs: v2.1.251+) and Pro/Max account, after the first API response. Do not send a model request just for this acceptance without choosing to do so yourself. The bridge forwards stdin in memory to your original statusLine command and preserves its terminal display. It never logs raw stdin. The original command remains trusted user code and retains its existing access.
-4. Open the **new 0.2 review artifact**, click Claude → **Choose quota-feed folder…**, and choose only `~/Library/Application Support/ControlTowerPrivate/quota-feed`. Expect Session/Weekly percentages plus observation time once Claude supplies them. Missing windows stay unavailable; after five minutes without an observation, the dashboard says stale. Watching checks the local files every five seconds; it does not poll Anthropic.
+4. Open the **new 0.3 review artifact**, click Claude → **Choose quota-feed folder…**, and choose only `~/Library/Application Support/ControlTowerPrivate/quota-feed`. Expect Session/Weekly percentages plus observation time once Claude supplies them. Missing windows stay unavailable; after five minutes without an observation, the dashboard says stale. Watching checks the local files every five seconds; it does not poll Anthropic.
 
 Only quota percentages/reset times/provider/version/observation time leave the statusLine bridge. It drops transcript paths, working directory, session IDs, costs, and all other input. It records the time it *observed* Claude's statusLine data, not a verified provider-fetch time; repeated cached provider data may remain unchanged. Claude being idle/closed means no guaranteed fresh allowance. This covers documented 5-hour/7-day fields, not all model-specific allowances.
 
@@ -47,17 +47,24 @@ No loopback listener or system-wide permission change is needed by this wrapper;
 
 Disconnect in the dashboard stops only its file reads. Quit the Terminal helper separately to stop the provider process. The saved provider login remains under official Codex's management; the dashboard does not delete it. This initial review adapter uses manual terminal refresh and separate setup, not a polished one-click integration.
 
-## Gemini: exact blocker, not technical impossibility
+## Gemini: official interactive quota display
 
-The official CLI uses the internal `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota` endpoint after Google sign-in/project onboarding. This confirms technical capability inside that client. It does **not** establish a supported external quota API or permission to borrow its OAuth client credentials.
+The official pinned CLI 0.60.0 is installed only under `.build/gemini-runtime`; no global installation. The helper verifies the npm tree, Python parser tree, and Node executable against `Bridges/gemini-runtime-pin.json`. The npm lockfile is retained in `Bridges/gemini-package-lock.json`. Parser dependencies are pyte 0.8.2 and wcwidth 0.2.13 in `.build/gemini-python`. On this reviewed machine, `bash Scripts/prepare_gemini_runtime.sh` restores dependencies and verifies the pins. Pins include the current machine's Node binary and platform-specific optional packages; other machines require a reviewed repin. Do not silently regenerate pins after an update.
 
-The bounded public-source spike found:
-- Interactive `/stats` refreshes per-model buckets into UI history.
-- `/stats model` uses cached pooled values, not a structured per-model export.
-- ACP's command registry excludes `stats` and has no quota method.
-- Headless slash handling can fall through to `sendMessageStream`; JSON stats describe run tokens/latency, not subscription allowance. Therefore launching headless `/stats` is unsafe for a quota-only adapter.
+1. Open `Bridges/Start Gemini Quotas.command` in your own Terminal. Keep its output private. The adapter starts the unmodified official CLI in a new home with telemetry/usage reporting/auto-update disabled. Existing Google sessions and settings are untouched. Google manages the new credentials; the adapter does not read them or claim Keychain-only storage.
+2. Answer any trust prompt yourself for the empty adapter workspace, and complete official Google sign-in yourself. The adapter does not accept prompts or enter credentials for you. If project onboarding, a paid plan change, or an unexpected permission is required, stop and resolve that explicit decision first.
+3. At the normal Gemini prompt, enter `/model`. This official command requests quota refresh and opens the model dialog without a model-generation call. Leave the dialog visible. The helper publishes only known tier labels and numeric quotas.
+4. Connect Gemini to the dedicated quota-feed folder in the 0.3 dashboard. Verify the displayed tiers match the Terminal. Press Esc, then enter `/model` again for another observation. **Ctrl+]** stops the helper and marks its feed unavailable. Dashboard Disconnect stops only the dashboard reader.
 
-No Gemini process/account was run. No token extraction, client-key copying, auto-trust, or model prompt was added. Gemini remains a required **unmet** acceptance criterion. Next defensible route: a reviewed official upstream quota-only export/RPC, or a separately authorized own-client Google OAuth integration after verifying service eligibility. A third-party desktop OAuth registration alone does not prove the internal quota API will accept it. Interactive terminal scraping could be a separately accepted brittle fallback, but is not shipped or labeled authoritative here.
+The CLI groups model buckets by tier and displays the highest usage in each group, rounded to an integer percentage. The dashboard labels these Pro, Flash, and Flash Lite, not individual models. Reset times are estimated from remaining duration rounded up to a minute; the UI labels them estimated. A dialog publishes once; redraws do not renew its observation timestamp. Missing/malformed/unknown rows stay unavailable. Observations age into stale after five minutes. A successful refresh cannot be proven from rendered values alone: the official client may retain cached quota after a provider error. The UI is a best-effort observation, not a stable API contract.
+
+The wrapper forwards user input but generates none. Do not enter a model message just to obtain quota. It never uses headless `/stats`, copies OAuth identities or auth files, logs terminal contents, or auto-accepts trust. Strict fixed-name parsing excludes identity/account text even if it appears elsewhere on screen.
+
+## Grok: requested, not yet integrated
+
+Target is the user's consumer SuperGrok subscription, not API-team billing. Official [Grok Build](https://docs.x.ai/build/overview) exists and uses provider-owned browser sign-in. Its [changelog](https://x.ai/build/changelog) documents an interactive `/usage` subscription modal. The [consumer FAQ](https://docs.x.ai/grok/faq) describes the shared weekly allowance, percentage used and reset time under Settings → Usage.
+
+No official `grok` executable was found on PATH during this checkpoint. No CLI was installed or signed into. No documented structured consumer quota command/export was found. A version-pinned strict `/usage` screen adapter is plausible, but its actual grammar and compatibility with this subscription remain unverified. The official installer and runtime must be reviewed before any installation; a third-party package with a similar name is not interchangeable. There is no Grok card claiming working support. No API-spend import substitutes for the subscription pool.
 
 ## Sources and freshness
 
@@ -70,3 +77,5 @@ Checked 2026-09-22; public main branches and provider interfaces can change.
 - [Gemini ACP command registry](https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/acp/acpCommandHandler.ts)
 - [Gemini headless dispatch](https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/nonInteractiveCli.ts) and [command result handling](https://github.com/google-gemini/gemini-cli/blob/main/packages/cli/src/nonInteractiveCliCommands.ts)
 - [Google desktop OAuth registration](https://developers.google.com/identity/protocols/oauth2/native-app)
+
+Pinned source: [model command](https://github.com/google-gemini/gemini-cli/blob/v0.60.0/packages/cli/src/ui/commands/modelCommand.ts), [quota renderer](https://github.com/google-gemini/gemini-cli/blob/v0.60.0/packages/cli/src/ui/components/ModelQuotaDisplay.tsx), and [reset formatter](https://github.com/google-gemini/gemini-cli/blob/v0.60.0/packages/cli/src/ui/utils/formatters.ts).
