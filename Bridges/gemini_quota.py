@@ -150,8 +150,10 @@ def stop(child):
         child.wait(timeout=3)
 
 
-def acquire_feed_lock(output):
-    fd = os.open(output / ".gemini-adapter.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+def acquire_feed_lock(output, provider="gemini"):
+    if provider not in ("gemini", "grok"):
+        raise ValueError("Unsupported terminal provider")
+    fd = os.open(output / ("." + provider + "-adapter.lock"), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     lock = os.fdopen(fd, "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -161,7 +163,8 @@ def acquire_feed_lock(output):
         raise
 
 
-def main():
+def main(*, provider="gemini", verify=verify_runtime, prepare=prepare_state,
+         parse=parse_screen, dialog_label="Select Model", command=None, notice=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", required=True)
     parser.add_argument("--output", required=True)
@@ -175,43 +178,45 @@ def main():
     owns_output = False
     failed = False
     stage = "runtime verification"
+    failure_kind = "unavailable"
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
     try:
         os.umask(0o077)  # adapter and child only; no system-wide permission change
-        node = verify_runtime()
+        binary = verify()
         sys.path.insert(0, str(ROOT / ".build/gemini-python"))
         import pyte
         output, state = private_dir(args.output), private_dir(args.state)
         stage = "private state preparation"
         if output == state or output in state.parents or state in output.parents:
             raise ValueError("Separate quota folder required")
-        cwd, env = prepare_state(state)
-        lock = acquire_feed_lock(output)
+        cwd, env = prepare(state)
+        lock = acquire_feed_lock(output, provider)
         owns_output = True
-        publish(output, envelope("gemini", []))
-        print("Official Gemini CLI owns sign-in in a separate private home. No existing account files are read.")
-        print("Complete Google sign-in yourself; answer any trust prompt yourself. Do not send a model message.")
-        print("At the normal Gemini prompt, enter /model. Leave that quota dialog visible to publish.")
-        print("Esc closes the dialog; /model requests another observation. Ctrl+] quits this adapter.")
-        print("Only rounded tier percentages and estimated reset times leave this private Terminal.", flush=True)
-        stage = "official interactive client"
+        publish(output, envelope(provider, []))
+        print(notice or "Official Gemini owns sign-in in a separate private home. Complete Google sign-in and trust prompts yourself. At the normal prompt enter /model; leave that dialog visible. Esc closes it; /model refreshes. Do not send a model message. Only rounded tier quotas and estimated resets leave Terminal.")
+        print("Ctrl+] quits this adapter. Keep sign-in output private.", flush=True)
+        stage = "private terminal creation"
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 140, 0, 0))
-        child = subprocess.Popen([str(node), str(ROOT / ".build/gemini-runtime/node_modules/@google/gemini-cli/bundle/gemini.js")],
+        stage = "official interactive client startup"
+        argv = command(binary) if command else [str(binary), str(ROOT / ".build/gemini-runtime/node_modules/@google/gemini-cli/bundle/gemini.js")]
+        child = subprocess.Popen(argv,
                                  stdin=slave, stdout=slave, stderr=slave, cwd=cwd, env=env, start_new_session=True)
         os.close(slave)
         screen = pyte.Screen(140, 60)
         stream = pyte.ByteStream(screen)
+        stage = "private terminal input setup"
         original = termios.tcgetattr(sys.stdin.fileno())
         tty.setraw(sys.stdin.fileno())
         last_output = time.monotonic()
         captured = False
         dirty = False
         bytes_since_pause = 0
+        stage = "quota screen observation"
         while child.poll() is None:
-            ready, _, _ = select.select([master, sys.stdin], [], .2)
+            ready, _, _ = select.select([master, sys.stdin], [], [], .2)
             if sys.stdin in ready:
                 data = os.read(sys.stdin.fileno(), 4096)
                 if not data or b"\x1d" in data:
@@ -237,19 +242,24 @@ def main():
                 dirty = False
                 bytes_since_pause = 0
                 lines = screen.display
-                dialog = any("Select Model" in line for line in lines)
+                dialog = any(dialog_label in line for line in lines)
                 if not dialog:
                     captured = False
                 elif not captured:
                     try:
-                        result = parse_screen(lines, time.time())
+                        result = parse(lines, time.time())
                     except ValueError:
                         result = None
-                    publish(output, result or envelope("gemini", []))
-                    captured = True  # never refresh observation age on idle redraws
-    except (Exception, KeyboardInterrupt):
+                    publish(output, result or envelope(provider, []))
+                    # A loading dialog may arrive before its quota response.
+                    # Capture once after valid rows, not once after its shell.
+                    captured = result is not None
+    except (Exception, KeyboardInterrupt) as error:
         # Never print provider errors, screen contents, login URLs or input.
         failed = True
+        failure_kind = type(error).__name__
+        if isinstance(error, OSError) and isinstance(error.errno, int):
+            failure_kind += " errno " + str(error.errno)
     finally:
         cleanup_failed = False
         try:
@@ -267,14 +277,14 @@ def main():
                 os.close(master)
             if owns_output:
                 try:
-                    publish(args.output, envelope("gemini", []))
+                    publish(args.output, envelope(provider, []))
                 except (OSError, ValueError):
                     cleanup_failed = failed = True
             if lock:
                 lock.close()
         if failed:
-            print("\nAdapter unavailable or cancelled at " + stage + ". Provider details suppressed.")
-        print("\nCleanup incomplete; check the private Terminal." if cleanup_failed else "\nGemini adapter stopped. No raw terminal data was saved.")
+            print("\nAdapter unavailable or cancelled at " + stage + " (" + failure_kind + "). Provider details suppressed.")
+        print("\nCleanup incomplete; check the private Terminal." if cleanup_failed else "\nTerminal adapter stopped. No raw terminal data was saved.")
     return 1 if failed else 0
 
 

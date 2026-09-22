@@ -28,6 +28,17 @@ import Testing
             try QuotaFeed.decode(data(["provider": "gemini", "windows": [["id": "Secret", "usedPercent": 1]]]), provider: .gemini)
         }
     }
+    @Test func grokAcceptsOnlyWeeklySubscriptionQuota() throws {
+        let valid = try data(["provider": "grok", "windows": [["id": "Weekly", "usedPercent": 50]]])
+        let result = try QuotaFeed.decode(valid, provider: .grok, now: Date(timeIntervalSince1970: 1000))
+        #expect(result.windows.first?.usedPercent == 50)
+        #expect(result.windows.first?.resetsAt == nil)
+        for id in ["Monthly", "Credits", "Session"] {
+            #expect(throws: SafeError.self) {
+                try QuotaFeed.decode(data(["provider": "grok", "windows": [["id": id, "usedPercent": 1]]]), provider: .grok)
+            }
+        }
+    }
     @Test func wrongProviderExtraFieldsFutureAndBooleansRejected() throws {
         for changes: [String: Any] in [["provider": "codex"], ["token": "synthetic-secret"], ["observedAt": 100000],
                                       ["observedAt": true], ["windows": [["id": "Session", "usedPercent": true]]],

@@ -89,7 +89,7 @@ struct Dashboard: View {
                         Text("Provider-owned sign-in. Quota numbers stay local.").foregroundStyle(.secondary)
                     }
                 }
-                Text("Connections start off each launch. Select a dedicated quota-feed folder after setup. The dashboard reads only Claude/Codex/Gemini quota snapshots every five seconds. It does not sign in, receive tokens, launch providers or access the network.")
+                Text("Connections start off each launch. Select a dedicated quota-feed folder after setup. The dashboard reads only Claude/Codex/Gemini/Grok quota snapshots every five seconds. It does not sign in, receive tokens, launch providers or access the network.")
                     .font(.callout).padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                 ForEach(Provider.allCases) { provider in
                     VStack(alignment: .leading, spacing: 12) {
@@ -105,10 +105,11 @@ struct Dashboard: View {
                                     ProgressView(value: window.usedPercent, total: 100)
                                     Text("\(window.usedPercent, specifier: "%.1f")% used").monospacedDigit().frame(width: 110)
                                 }
-                                if let date = window.resetsAt { Text("\(provider == .gemini ? "Estimated reset" : "Resets") \(date.formatted())").font(.caption).foregroundStyle(.secondary) }
+                                if let date = window.resetsAt { Text("\([.gemini, .grok].contains(provider) ? "Estimated reset" : "Resets") \(date.formatted())").font(.caption).foregroundStyle(.secondary) }
                             }
                             Text("Provider observation · \(snapshot.fetchedAt.formatted())").font(.caption).foregroundStyle(.secondary)
                             if provider == .gemini { Text("Official CLI screen observation; provider data may be cached. Rounded tier usage and estimated reset times.").font(.caption).foregroundStyle(.secondary) }
+                            if provider == .grok { Text("SuperGrok weekly pool observed in official CLI. Floored percentage; reset inferred from local display. Provider data may be cached.").font(.caption).foregroundStyle(.secondary) }
                             if Date().timeIntervalSince(snapshot.fetchedAt) > QuotaFeed.staleAfter {
                                 Text("Stale — last observation is over five minutes old. Current allowance is unknown; refresh through the provider adapter.").font(.callout).foregroundStyle(.orange)
                             }
@@ -116,7 +117,7 @@ struct Dashboard: View {
                             Text(providerSetup(provider)).foregroundStyle(.secondary)
                         }
                         if let error = model.errors[provider] { Text(error).font(.callout).foregroundStyle(.orange) }
-                        if [.claude, .codex, .gemini].contains(provider) { HStack {
+                        if [.claude, .codex, .gemini, .grok].contains(provider) { HStack {
                             Button("Setup instructions…") { viewState.connection = provider }
                             Button("Choose quota-feed folder…") { model.selectFeed(provider) }
                             if model.enabled.contains(provider) {
@@ -151,6 +152,7 @@ func providerSetup(_ provider: Provider) -> String {
     case .claude: "Claude Code provides official status-line quota data after a model response (supported Pro/Max versions). Setup preserves your existing status line. No Claude token is copied. Observations may be stale while Claude is idle."
     case .codex: "A user-started helper uses official Codex device sign-in and account/rateLimits/read. Credentials stay with Codex in a separate Keychain-backed home. The helper refreshes only when you request it."
     case .gemini: "A private Terminal adapter reads the official Gemini CLI model-quota screen. Sign in with Google yourself, then enter /model. Only rounded Pro/Flash/Flash Lite percentages and estimated reset times are exported. The provider manages its own credentials in a separate home."
+    case .grok: "Private Terminal adapter for the official Grok subscription /usage screen. Sign-in and live parser verification are pending. Exports weekly allowance only; API billing and extra credits are excluded."
     default: provider.limitation
     }
 }
@@ -166,6 +168,7 @@ struct SetupSheet: View {
             Text(provider == .claude
                  ? "2. Generate and review the statusLine patch. Apply it yourself; no existing Claude settings are changed by the generator. Continue normal Claude use to publish a quota observation."
                  : provider == .gemini ? "2. Open Start Gemini Quotas.command in your own Terminal. Complete Google sign-in yourself, then enter /model at the normal prompt. Leave the quota dialog visible. Ctrl+] stops the adapter."
+                 : provider == .grok ? "2. Open Start Grok Quotas.command in your private Terminal. Complete official subscription sign-in yourself, then enter /usage. Leave Usage limit visible. Ctrl+] stops the adapter."
                  : "2. Review the signed Codex binary pin and start the helper with --login. Complete the official device sign-in yourself. The official process requests Keychain storage; no plaintext fallback is requested.")
             Text("3. Choose the dedicated quota-feed folder in this dashboard. The card should show the provider observation time and quota percentages. Missing data stays unavailable; older observations are marked stale.")
             Text("A folder connection alone does not prove quota access. Check that actual percentages and a recent observation appear.").font(.caption)

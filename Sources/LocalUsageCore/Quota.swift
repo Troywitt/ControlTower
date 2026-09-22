@@ -1,10 +1,10 @@
 import Foundation
 
 public enum Provider: String, CaseIterable, Codable, Sendable, Identifiable {
-    case claude, codex, gemini, cursor, copilot, antigravity
+    case claude, codex, gemini, grok, cursor, copilot, antigravity
     public var id: String { rawValue }
     public var title: String {
-        switch self { case .claude: "Claude"; case .codex: "Codex"; case .gemini: "Gemini"; case .cursor: "Cursor"; case .copilot: "Copilot"; case .antigravity: "Antigravity" }
+        switch self { case .claude: "Claude"; case .codex: "Codex"; case .gemini: "Gemini"; case .grok: "Grok"; case .cursor: "Cursor"; case .copilot: "Copilot"; case .antigravity: "Antigravity" }
     }
     public var limitation: String {
         switch self {

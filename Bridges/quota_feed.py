@@ -71,7 +71,7 @@ def private_dir(path):
 def publish(directory, data):
     directory = private_dir(directory)
     raw = json.dumps(data, allow_nan=False, separators=(",", ":")).encode()
-    if len(raw) > 8192 or data["provider"] not in ("claude", "codex", "gemini"):
+    if len(raw) > 8192 or data["provider"] not in ("claude", "codex", "gemini", "grok"):
         raise ValueError("Invalid feed")
     fd, temp = tempfile.mkstemp(prefix=".quota-", dir=directory)
     try:

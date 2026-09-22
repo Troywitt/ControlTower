@@ -5,6 +5,9 @@ import sys
 import tempfile
 import unittest
 import subprocess
+import pty
+import select
+import time
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +22,51 @@ def screen(rows):
 
 
 class GeminiTests(unittest.TestCase):
+    def test_terminal_loading_then_snapshot_no_reaging_and_quit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            output, state = root / "feed", root / "state"
+            loading = "\x1b[2J\x1b[HSelect Model\r\nLoading quotas\r\n(Press Esc to close)"
+            ready = "\x1b[2J\x1b[H" + "\r\n".join(screen(["Pro ▬▬▬▬ 12%"]))
+            fake = "import sys,time;sys.stdout.write(" + repr(loading) + ");sys.stdout.flush();time.sleep(1.2);sys.stdout.write(" + repr(ready) + ");sys.stdout.flush();time.sleep(1.2);sys.stdout.write(" + repr(ready) + ");sys.stdout.flush();time.sleep(30)"
+            code = ("import sys;from pathlib import Path;sys.path.insert(0," + repr(str(ROOT / "Bridges")) + ");"
+                    "from gemini_quota import main;sys.argv=['test','--state'," + repr(str(state)) + ",'--output'," + repr(str(output)) + "];"
+                    "main(verify=lambda:Path(sys.executable),prepare=lambda state:(state,{'HOME':str(state),'PATH':'/usr/bin:/bin'}),"
+                    "command=lambda binary:[str(binary),'-c'," + repr(fake) + "])")
+            master, slave = pty.openpty()
+            process = subprocess.Popen([sys.executable, "-c", code], stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+            os.close(slave)
+            target = output / "gemini.json"
+            first = None
+            synthetic_output = bytearray()
+            deadline = time.monotonic() + 6
+            try:
+                while time.monotonic() < deadline:
+                    if select.select([master], [], [], .1)[0]: synthetic_output.extend(os.read(master, 16384))
+                    if target.exists():
+                        data = json.loads(target.read_text())
+                        if data["windows"]:
+                            first = data
+                            break
+                self.assertIsNotNone(first, synthetic_output.decode(errors="replace"))
+                self.assertEqual(first["windows"][0]["usedPercent"], 12)
+                time.sleep(1.4)
+                self.assertEqual(json.loads(target.read_text())["observedAt"], first["observedAt"])
+                os.write(master, b"\x1d")
+                deadline = time.monotonic() + 8
+                while process.poll() is None and time.monotonic() < deadline:
+                    if select.select([master], [], [], .1)[0]:
+                        try:
+                            synthetic_output.extend(os.read(master, 16384))
+                        except OSError:
+                            break
+                self.assertIsNotNone(process.poll(), synthetic_output.decode(errors="replace"))
+                self.assertEqual(json.loads(target.read_text())["windows"], [])
+            finally:
+                if process.poll() is None:
+                    process.terminate();process.wait(timeout=5)
+                os.close(master)
+
     def test_single_writer_and_cancellation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
