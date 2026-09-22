@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "Bridges"))
 from quota_feed import claude_feed, codex_feed, publish
 from prepare_claude import prepare
-from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError
+from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError, AdapterError
 from claude_diagnostic import record, shape
 import time
 
@@ -215,6 +215,75 @@ for line in sys.stdin:
         finally: rpc.close()
         # Device codes exist only in the terminal UX; output publication is quota-only.
         self.assertNotIn("TEST-1234", json.dumps(codex_feed({"rateLimits": {}})))
+
+    def test_device_login_handles_coalesced_fragmented_and_delayed_notifications(self):
+        for mode in ("coalesced", "completion_first", "fragmented", "delayed"):
+            script = '''import sys,json,time
+m=json.loads(sys.stdin.readline())
+reply=json.dumps({"id":m["id"],"result":{"type":"chatgptDeviceCode","loginId":"test-login","userCode":"TEST-1234","verificationUrl":"https://auth.openai.com/codex/device"}})+"\\n"
+other=json.dumps({"method":"account/updated","params":{"PRIVATE":"SECRET_SENTINEL"}})+"\\n"
+done=json.dumps({"method":"account/login/completed","params":{"loginId":"test-login","success":True}})+"\\n"
+mode=MODE
+if mode=="coalesced":
+ sys.stdout.write(reply+other+done);sys.stdout.flush()
+elif mode=="completion_first":
+ sys.stdout.write(done+reply);sys.stdout.flush()
+elif mode=="fragmented":
+ for part in (reply[:9],reply[9:]+other+done[:23],done[23:]):
+  sys.stdout.write(part);sys.stdout.flush();time.sleep(.03)
+else:
+ sys.stdout.write(reply);sys.stdout.flush();time.sleep(.2)
+ sys.stdout.write(other+done);sys.stdout.flush()
+time.sleep(10)
+'''.replace("MODE", repr(mode))
+            rpc = self.fake(script)
+            try:
+                rpc.login(lambda _: None)
+                self.assertTrue(rpc.login_result[1])
+            finally:
+                rpc.close()
+
+    def test_failed_login_preserves_only_safe_reason_and_cancels(self):
+        sentinel = "SECRET_SENTINEL_CALLBACK_TOKEN"
+        for provider_error, expected in (("Keychain failed " + sentinel, "credential storage unavailable"),
+                                         ("device code expired " + sentinel, "provider sign-in expired"),
+                                         (sentinel, "provider request rejected")):
+            script = '''import sys,json
+for line in sys.stdin:
+ m=json.loads(line)
+ if m["method"]=="account/login/start":
+  reply={"id":m["id"],"result":{"type":"chatgptDeviceCode","loginId":"test-login","userCode":"TEST-1234","verificationUrl":"https://auth.openai.com/codex/device"}}
+  done={"method":"account/login/completed","params":{"loginId":"test-login","success":False,"error":ERROR}}
+  sys.stdout.write(json.dumps(reply)+"\\n"+json.dumps(done)+"\\n");sys.stdout.flush()
+ elif m["method"]=="account/login/cancel":
+  print(json.dumps({"id":m["id"],"result":{}}),flush=True)
+'''.replace("ERROR", repr(provider_error))
+            rpc = self.fake(script)
+            try:
+                with self.assertRaises(AdapterError) as caught:
+                    rpc.login(lambda _: None)
+                self.assertEqual(str(caught.exception), "provider reported sign-in failure: " + expected)
+                self.assertNotIn(sentinel, str(caught.exception) + repr(rpc.login_result))
+                self.assertEqual(rpc.serial, 2)  # cancellation was sent
+            finally:
+                rpc.close()
+
+    def test_login_eof_malformed_and_idle_timeout_are_distinct(self):
+        for source, expected in (("raise SystemExit(0)", "official provider process exited"),
+                                 ("print('not-json',flush=True)", "malformed provider message")):
+            rpc = self.fake(source)
+            try:
+                with self.assertRaisesRegex(AdapterError, expected):
+                    rpc.receive(time.monotonic() + 1)
+            finally:
+                rpc.close()
+        rpc = self.fake('import time;time.sleep(10)')
+        try:
+            with self.assertRaises(TimeoutError): rpc.receive(time.monotonic() + .1)
+        finally:
+            rpc.close()
+        with self.assertRaisesRegex(AdapterError, "malformed login completion"):
+            RPC.notification(object(), {"method": "account/login/completed", "params": {"success": "true"}})
 
     def test_untrusted_device_destination_and_oversize_fail(self):
         script = '''import sys,json

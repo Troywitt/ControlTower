@@ -22,13 +22,26 @@ ALLOWED = {"initialize", "account/login/start", "account/login/cancel", "account
 REQUIREMENT = 'anchor apple generic and identifier "codex" and certificate leaf[subject.OU] = "2DC432GLL2"'
 
 
-class ProviderOperationError(ValueError):
+class AdapterError(ValueError):
+    """Reason strings are constants supplied only by this module."""
+    def __init__(self, category):
+        self.category = category
+        super().__init__(category)
+
+
+class ProviderOperationError(AdapterError):
     """Only a fixed category survives; never retain the provider error body."""
     def __init__(self, error):
         message = error.get("message", "") if isinstance(error, dict) else ""
         message = message.lower() if isinstance(message, str) else ""
         code = error.get("code") if isinstance(error, dict) else None
         if any(term in message for term in ("keyring", "keychain", "credential store")):
+            category = "credential storage unavailable"
+        elif any(term in message for term in ("expired", "expiration")):
+            category = "provider sign-in expired"
+        elif any(term in message for term in ("denied", "declined", "cancelled", "canceled")):
+            category = "provider sign-in denied or cancelled"
+        elif any(term in message for term in ("persist", "save credentials", "save auth", "saving auth", "store credentials")):
             category = "credential storage unavailable"
         elif any(term in message for term in ("not authenticated", "not logged in", "requires authentication", "authentication required", "requires chatgpt", "missing access token", "unauthorized", "401")):
             category = "saved login unavailable or rejected"
@@ -118,24 +131,32 @@ class RPC:
                 raise TimeoutError("Provider timeout")
             chunk = os.read(self.process.stdout.fileno(), 4096)
             if not chunk:
-                raise ValueError("Provider stopped")
+                raise AdapterError("official provider process exited")
             self.buffer.extend(chunk)
             if len(self.buffer) > MAX_INPUT:
-                raise ValueError("Provider response too large")
+                raise AdapterError("provider response exceeded size limit")
         line, _, rest = self.buffer.partition(b"\n")
         self.buffer = bytearray(rest)
-        result = json.loads(line)
+        try:
+            result = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise AdapterError("malformed provider message") from None
         if not isinstance(result, dict):
-            raise ValueError("Invalid protocol")
+            raise AdapterError("malformed provider message")
         return result
 
     def notification(self, message):
         # The adapter never executes server-initiated requests, tools or prompts.
         if "method" in message and "id" in message:
-            raise ValueError("Unexpected server request")
+            raise AdapterError("unexpected provider request refused")
         if message.get("method") == "account/login/completed":
             params = message.get("params", {})
-            self.login_result = (params.get("loginId"), params.get("success") is True)
+            if not isinstance(params, dict) or type(params.get("success")) is not bool:
+                raise AdapterError("malformed login completion")
+            # Keep only correlation and a fixed failure category in memory.
+            # Provider error strings can contain auth data and never leave here.
+            failure = None if params["success"] else ProviderOperationError({"message": params.get("error")}).category
+            self.login_result = (params.get("loginId"), params["success"], failure)
 
     def call(self, method, params=None, timeout=30):
         if method not in ALLOWED:
@@ -185,10 +206,10 @@ class RPC:
             while self.login_result is None or self.login_result[0] != login_id:
                 count += 1
                 if count > 256:
-                    raise ValueError("Excess login notifications")
+                    raise AdapterError("login notification limit exceeded")
                 self.notification(self.receive(deadline))
             if not self.login_result[1]:
-                raise ValueError("Login did not complete")
+                raise AdapterError("provider reported sign-in failure: " + self.login_result[2])
         except BaseException:
             try:
                 self.call("account/login/cancel", {"loginId": login_id}, timeout=2)
@@ -253,7 +274,7 @@ def main():
         rpc.initialize()
         if args.login:
             stage = "official device sign-in"
-            print("Official Codex will store this separate login in macOS Keychain. No plaintext fallback is requested.")
+            print("Official Codex is configured to request macOS Keychain storage for this separate login. No plaintext fallback is requested.")
             print("Provider traffic and auth refresh belong to Codex, outside the dashboard sandbox. Ctrl+C cancels.")
             rpc.login(print)
             print("Provider reported login complete.")
@@ -270,7 +291,7 @@ def main():
                 break
     except (Exception, KeyboardInterrupt) as error:
         # Do not expose raw provider errors, auth URLs, file contents or tracebacks.
-        category = error.category if isinstance(error, ProviderOperationError) else "cancelled" if isinstance(error, KeyboardInterrupt) else "timeout" if isinstance(error, TimeoutError) else "unavailable"
+        category = error.category if isinstance(error, AdapterError) else "cancelled" if isinstance(error, KeyboardInterrupt) else "timeout" if isinstance(error, TimeoutError) else "local pipe or terminal unavailable" if isinstance(error, OSError) else "unavailable"
         print("Adapter stopped at " + stage + " (" + category + "). No token fallback was attempted.", file=sys.stderr)
         return 1
     finally:
