@@ -7,4 +7,4 @@ exec /usr/bin/python3 ./codex_quota.py \
   --sha256 b973d440acac501fd2594a43e7ca9ce41e0a65b9dfb28d0d7a7837c99e1261e3 \
   --state "$HOME/Library/Application Support/ControlTowerPrivate/codex-adapter" \
   --output "$HOME/Library/Application Support/ControlTowerPrivate/quota-feed" \
-  --login
+  --enroll-official

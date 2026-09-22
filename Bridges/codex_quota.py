@@ -85,7 +85,7 @@ def verify_binary(path, expected_sha):
     return binary
 
 
-def launch(binary, state):
+def provider_context(binary, state):
     state = private_dir(state)
     marker = state / "controltower-adapter-v1"
     if not marker.exists():
@@ -103,11 +103,56 @@ def launch(binary, state):
     # proxy, provider URL, node injection, or project-config environment values.
     env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "CODEX_HOME": str(codex_home),
            "TMPDIR": str(private_dir(state / "tmp")), "LANG": "en_US.UTF-8"}
-    return subprocess.Popen([str(binary), "-c", 'cli_auth_credentials_store="keyring"',
-                             "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false",
-                             "app-server", "--listen", "stdio://"],
+    command = [str(binary), "-c", 'cli_auth_credentials_store="keyring"',
+               "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false"]
+    return command, cwd, env
+
+
+def launch(binary, state):
+    command, cwd, env = provider_context(binary, state)
+    return subprocess.Popen(command + ["app-server", "--listen", "stdio://"],
                             cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, start_new_session=True, bufsize=0)
+
+
+def stop_provider(child):
+    if child.poll() is not None:
+        return
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        try:
+            child.terminate()
+        except ProcessLookupError:
+            pass
+    try:
+        child.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                child.kill()
+            except ProcessLookupError:
+                pass
+        child.wait(timeout=3)
+
+
+def official_login(binary, state):
+    # Called only after main's private-terminal check and binary verification.
+    # Inherit the user's terminal directly: no pipes, capture, parsing or log.
+    command, cwd, env = provider_context(binary, state)
+    child = subprocess.Popen(command + ["login", "--device-auth"], cwd=cwd, env=env,
+                             start_new_session=True)
+    try:
+        try:
+            result = child.wait(timeout=660)
+        except subprocess.TimeoutExpired:
+            raise AdapterError("official login exceeded overall deadline") from None
+        if result != 0:
+            raise AdapterError("official CLI login failed; quota reader not started")
+    finally:
+        stop_provider(child)
 
 
 class RPC:
@@ -252,7 +297,9 @@ def main():
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--state", required=True, help="Dedicated private adapter state, NOT your existing Codex home")
     parser.add_argument("--output", required=True, help="Dedicated quota-only folder")
-    parser.add_argument("--login", action="store_true", help="Start official user-owned device sign-in")
+    enrollment = parser.add_mutually_exclusive_group()
+    enrollment.add_argument("--login", action="store_true", help="Legacy app-server device sign-in")
+    enrollment.add_argument("--enroll-official", action="store_true", help="Official CLI owns device sign-in, then quota-only app-server starts")
     args = parser.parse_args()
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt
@@ -269,6 +316,12 @@ def main():
             raise ValueError("Quota folder and provider state must be separate")
         lock = acquire_feed_lock(output)
         binary = verify_binary(args.binary, args.sha256)
+        if args.enroll_official:
+            stage = "official CLI device sign-in"
+            publish(output, envelope("codex", []))
+            print("Official Codex will handle device sign-in in this private Terminal. Keychain-only storage is requested. Keep this window open; Ctrl+C cancels.", flush=True)
+            official_login(binary, state)
+            print("Official CLI login exited successfully. Checking quota access next.", flush=True)
         stage = "official provider startup"
         rpc = RPC(launch(binary, state))
         rpc.initialize()

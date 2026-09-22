@@ -12,12 +12,62 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "Bridges"))
 from quota_feed import claude_feed, codex_feed, publish
 from prepare_claude import prepare
-from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError, AdapterError
+from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError, AdapterError, official_login, main
 from claude_diagnostic import record, shape
 import time
 
 
 class BridgeTests(unittest.TestCase):
+    def test_direct_enrollment_and_quota_share_private_identity(self):
+        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen:
+            state = Path(temp).resolve()
+            popen.return_value.wait.return_value = 0
+            popen.return_value.poll.return_value = 0
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "SECRET", "CODEX_HOME": "/outside", "HTTPS_PROXY": "SECRET"}):
+                official_login(Path("/verified/codex"), state)
+                login_args, login_kwargs = popen.call_args
+                launch(Path("/verified/codex"), state)
+                quota_args, quota_kwargs = popen.call_args
+            self.assertEqual(login_args[0][-2:], ["login", "--device-auth"])
+            self.assertEqual(login_args[0][:-2], quota_args[0][:-3])
+            self.assertEqual(login_kwargs["env"], quota_kwargs["env"])
+            self.assertEqual(login_kwargs["cwd"], quota_kwargs["cwd"])
+            self.assertNotIn("SECRET", json.dumps(login_kwargs["env"]))
+            self.assertNotIn("/outside", json.dumps(login_kwargs["env"]))
+            for stream in ("stdin", "stdout", "stderr"):
+                self.assertNotIn(stream, login_kwargs)  # private terminal, no capture
+            self.assertTrue(login_kwargs["start_new_session"])
+
+    def test_direct_enrollment_failure_cancel_and_deadline_cleanup(self):
+        cases = [(1, AdapterError), (KeyboardInterrupt(), KeyboardInterrupt),
+                 (subprocess.TimeoutExpired("synthetic", 660), AdapterError)]
+        for outcome, expected in cases:
+            with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen, patch("codex_quota.os.killpg") as kill:
+                child = popen.return_value
+                child.wait.side_effect = [outcome, 0]
+                child.poll.return_value = 1 if outcome == 1 else None
+                with self.assertRaises(expected): official_login(Path("/verified/codex"), Path(temp).resolve())
+                if outcome != 1: kill.assert_called_once()
+
+    def test_quota_starts_only_after_successful_official_enrollment(self):
+        for failure in (False, True):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp).resolve()
+                args = ["test", "--binary", "/verified/codex", "--sha256", "unused", "--state", str(root / "state"),
+                        "--output", str(root / "feed"), "--enroll-official"]
+                with patch.object(sys, "argv", args), patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), patch("codex_quota.verify_binary", return_value=Path("/verified/codex")), patch("codex_quota.official_login") as enroll, patch("codex_quota.launch") as start, patch("codex_quota.RPC") as rpc_type, patch("builtins.input", return_value="q"), patch("builtins.print"):
+                    if failure: enroll.side_effect = AdapterError("official CLI login failed; quota reader not started")
+                    else: start.side_effect = lambda *_: self.assertTrue(enroll.called)
+                    rpc_type.return_value.call.return_value = {"rateLimits": {"primary": {"usedPercent": 12}}}
+                    self.assertEqual(main(), 1 if failure else 0)
+                    if failure:
+                        start.assert_not_called();rpc_type.assert_not_called()
+                    else:
+                        rpc_type.return_value.initialize.assert_called_once()
+                        rpc_type.return_value.call.assert_called_once_with("account/rateLimits/read")
+                        rpc_type.return_value.login.assert_not_called()
+                    self.assertEqual(json.loads((root / "feed/codex.json").read_text())["windows"], [])
+
     def test_provider_errors_export_only_fixed_categories(self):
         sentinel = "SECRET_SENTINEL_ACCOUNT_AUTH_URL"
         cases = [("Not authenticated", "saved login unavailable or rejected"),
