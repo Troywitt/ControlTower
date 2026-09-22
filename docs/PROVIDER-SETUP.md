@@ -1,6 +1,6 @@
 # Provider-owned setup (review build 0.4)
 
-**Status: actual Claude quota-to-dashboard acceptance passed; Codex/Gemini/Grok enrollment remains pending.** Never enter a session token in ControlTower or chat. The new dashboard has no token form or network entitlement. Claude and Codex feed real provider quota observations through a dedicated local folder; this is separate from optional token-count imports. Gemini uses strict parsing of the official interactive quota screen.
+**Status: actual Claude and Codex quota-to-dashboard acceptance passed in version 0.4; Gemini/Grok enrollment and Codex saved-login reuse remain pending.** Never enter a session token in ControlTower or chat. The new dashboard has no token form or network entitlement. Claude and Codex feed real provider quota observations through a dedicated local folder; this is separate from optional token-count imports. Gemini uses strict parsing of the official interactive quota screen.
 
 ## Claude: first user step
 
@@ -57,6 +57,8 @@ The official pinned CLI 0.60.0 is installed only under `.build/gemini-runtime`; 
 4. Connect Gemini to the dedicated quota-feed folder in the 0.4 dashboard. Verify the displayed tiers match the Terminal. Press Esc, then enter `/model` again for another observation. **Ctrl+]** stops the helper and marks its feed unavailable. Dashboard Disconnect stops only the dashboard reader.
 
 The CLI groups model buckets by tier and displays the highest usage in each group, rounded to an integer percentage. The dashboard labels these Pro, Flash, and Flash Lite, not individual models. Reset times are estimated from remaining duration rounded up to a minute; the UI labels them estimated. A dialog publishes once; redraws do not renew its observation timestamp. Missing/malformed/unknown rows stay unavailable. Observations age into stale after five minutes. A successful refresh cannot be proven from rendered values alone: the official client may retain cached quota after a provider error. The UI is a best-effort observation, not a stable API contract.
+
+The startup keyboard-capability query crash reported as TypeError was fixed in adapter commit `4964a7d`. The unchanged pinned official runtime now passes unauthenticated startup and clean adapter exit; actual Google sign-in and quota display still require user verification.
 
 The wrapper forwards user input but generates none. Do not enter a model message just to obtain quota. It never uses headless `/stats`, copies OAuth identities or auth files, logs terminal contents, or auto-accepts trust. Strict fixed-name parsing excludes identity/account text even if it appears elsewhere on screen.
 

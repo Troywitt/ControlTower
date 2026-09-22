@@ -109,3 +109,16 @@ Version0.2 was quit and version0.4 launched, then both actual quota-folder conne
 Workspace: documentation-only acceptance update; no unrelated dirty files, no stashes, no live feed writes. Active jobs: reviewed private dashboard0.4 and user-owned Codex helper. User stops that helper with q; preserve it during remaining setup. Lease released after checkpoint commit.
 
 Next single user step: open Bridges/Start Gemini Quotas.command in a private Terminal, complete official Google sign-in/trust personally, then enter /model and leave its quota dialog open. Origin task relays this; do not capture the Terminal or generate a model prompt. Verify only the sanitized Gemini feed and matching dashboard next. Grok remains later; Codex saved-login reuse remains separately unverified.
+
+## Gemini startup TypeError correction, 2026-09-22
+
+User's first Gemini attempt exited at quota screen observation with TypeError before sign-in was established. Reproduced with /usr/bin/python3 3.9.6, unchanged verified Gemini0.60.0 runtime and pyte0.8.2, private empty scratch state, no auth or model input. Only exception type and source locations were recorded: gemini_quota.py stream.feed -> pyte/streams.py private CSI dispatch. Raw terminal output was discarded, not printed or saved. Official bundled terminal detection emits CSI >4;?m (modifyOtherKeys query); pyte dispatches private=True to Screen.select_graphic_rendition, which rejects that keyword.
+
+Fix commit4964a7d supplies a quota observer Screen subclass that ignores private rendition queries. Ordinary color sequences keep pyte behavior. Original terminal bytes still pass unchanged to the user's terminal; the observer generates no response. No broad exception suppression, dependency changes or runtime pin regeneration. Gemini and Grok share this observer; dashboard unchanged.
+
+Verification at4964a7d, cwd /Users/troywitt/AI/Code/ControlTower:
+- PASS `/usr/bin/python3 -m unittest discover -s Tests/BridgeTests -v`: 39 tests, /tmp/controltower-gemini-query-tests.log. Regression proves the original pinned failure, all query-byte split boundaries, unchanged observed text/attributes, ordinary color handling and no generated process input. Nested PTY lifecycle now includes the exact startup query before loading/ready/no-reaging/quit/clear checks.
+- PASS `/usr/bin/python3 /tmp/controltower-gemini-startup-check.py`: actual pinned official CLI via real adapter verify/prepare/startup path, empty scratch privateHOME and feed, remained running for18 seconds; adapter Ctrl+] returned exit0 and empty windows; no TypeError locations. The harness discarded all raw terminal bytes and sent no input to the provider. The pre-fix run exited1 at the exact parser dispatch. Temporary diagnostic tracing is not in production.
+- PASS `git diff --check`. No dashboard rebuild or repeated Swift tests needed for the Python-only fix.
+
+Status partial: startup repaired; actual Gemini Google sign-in, authenticated quota parser and feed/UI comparison remain pending. Claude/Codex live feeds, helpers and dashboard connections were untouched. No live feed writes or credential access. Root relays one next user step: reopen Start Gemini Quotas.command, complete official sign-in/trust privately, enter /model and leave its quota dialog open. Report ready only. Lease released after documentation checkpoint and push.
