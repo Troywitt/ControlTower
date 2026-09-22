@@ -12,8 +12,21 @@ Repo: `/Users/troywitt/AI/Code/ControlTower`; branch `harden/explicit-quota-acce
 - Gemini: public-source spike found no safe structured headless/ACP quota route. ACP excludes stats; headless slash stats can reach a model request. No adapter run, token extraction or copied client key. Exact sources/boundary in PROVIDER-SETUP.md; no claim of technical impossibility or full completion.
 - Original upstream installed app untouched. Historical sources excluded; old manual-token core moved to test-only fixtures. Prior 0.1 UI report is explicitly historical.
 
-## Verification in progress
-Working-tree synthetic results observed: 27 Swift tests / 5 suites passed using explicit bundled Testing macro; 12 Python bridge tests passed; source gate passes. Final commit SHA, release artifact and exact verification evidence will be recorded after committing/building. No real credentials, auth files, populated UI, cookies or Keychain secrets inspected. Codex offline schema generator ran with temporary isolated HOME/CODEX_HOME only; confirms device-login/quota methods without account calls.
+## Verification observed
+All commands ran in `/Users/troywitt/AI/Code/ControlTower` at implementation SHA `e7227b46ae0812ad3bfaa95faabcce33972d3701`. Later handoff/evidence edits are documentation-only.
+
+| Check | Result | Evidence |
+|---|---|---|
+| `Scripts/test_private.sh` | PASS | 27 Swift tests / 5 suites; 12 Python tests; source boundary gate. `/tmp/controltower-e7227b4-tests.log` |
+| `Scripts/build_private.sh` | PASS | Release build, strict signature and signed artifact payload/entitlement gate. `/tmp/controltower-e7227b4-build.log` |
+| Native synthetic UI | PASS, bounded | Separate QA identity copied from this build; selected synthetic folder, Claude25/40%, automatic atomic update45%, stale warning, missing-data clear, Codex15%, both disconnects and Claude setup sheet. See UI-ACCEPTANCE-02.md |
+| Official Codex offline schema | PASS, bounded | Temporary isolated HOME/CODEX_HOME, generate-json-schema only. Device login request/response and quota-read methods present; no account operations |
+| Actual Claude/Codex sign-in, quota and Keychain reuse | NOT RUN | User-owned next acceptance; no secrets inspected |
+| Gemini adapter | BLOCKED | No defensible quota-only headless/ACP export found; exact source evidence in PROVIDER-SETUP.md |
+
+Review artifact (not installed/launched): `.build/artifacts/review.iKiDno/ControlTower Private.app`, version0.2.0 build2; `CTSourceRevision=e7227b46ae0812ad3bfaa95faabcce33972d3701`. Main executable SHA-256 `bfc09b9f37141c7f24b6db9e1abd2d90c0dd48538806c0cb995aba7b4ae01566`. Signed entitlements contain only app-sandbox and files.user-selected.read-only; **no network entitlement**. UI QA used a copy with separate `com.bodie.controltower.quota-qa` identity to avoid interacting with potentially populated old app; that QA app was quit afterwards, confirmed absent in app inventory. Not a live account test.
+
+No real credentials, auth files, populated UI, cookies or Keychain secrets inspected. No `.claude/`, account, certificate, original installed app or system security config modified.
 
 Installed Codex 0.153.4 signer metadata: OpenAI OpCo, LLC (2DC432GLL2); strict Apple requirement PASS; SHA-256 b973d440acac501fd2594a43e7ca9ce41e0a65b9dfb28d0d7a7837c99e1261e3. Exact pinned command is in PROVIDER-SETUP.md. No actual official app-server authentication runtime started.
 
