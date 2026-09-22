@@ -30,7 +30,7 @@ class ProviderOperationError(ValueError):
         code = error.get("code") if isinstance(error, dict) else None
         if any(term in message for term in ("keyring", "keychain", "credential store")):
             category = "credential storage unavailable"
-        elif any(term in message for term in ("not authenticated", "not logged in", "requires authentication", "requires chatgpt", "missing access token", "unauthorized", "401")):
+        elif any(term in message for term in ("not authenticated", "not logged in", "requires authentication", "authentication required", "requires chatgpt", "missing access token", "unauthorized", "401")):
             category = "saved login unavailable or rejected"
         elif any(term in message for term in ("forbidden", "403")):
             category = "provider access denied"
@@ -38,7 +38,7 @@ class ProviderOperationError(ValueError):
             category = "provider rate limited"
         elif any(term in message for term in ("timed out", "timeout", "connect", "dns")):
             category = "provider connection unavailable"
-        elif type(code) is int and code in (-32600, -32601, -32602):
+        elif type(code) is int and code in (-32601, -32602):
             category = "provider protocol incompatible"
         else:
             category = "provider request rejected"
@@ -145,7 +145,9 @@ class RPC:
             raise ValueError("Login type refused")
         self.serial += 1
         expected = self.serial
-        self.send({"id": expected, "method": method, "params": params or {}})
+        # Unit-parameter methods (including account/rateLimits/read) require
+        # JSON null in the pinned schema; do not rely on permissive decoding.
+        self.send({"id": expected, "method": method, "params": params})
         deadline = time.monotonic() + timeout
         count = 0
         while True:

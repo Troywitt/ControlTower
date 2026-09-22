@@ -31,6 +31,8 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(str(error), category)
             self.assertNotIn(sentinel, repr(vars(error)) + repr(error))
         self.assertEqual(str(ProviderOperationError({"code": -32602})), "provider protocol incompatible")
+        self.assertEqual(str(ProviderOperationError({"code": -32600})), "provider request rejected")
+        self.assertEqual(str(ProviderOperationError({"code": -32600, "message": "chatgpt authentication required to read rate limits"})), "saved login unavailable or rejected")
         script = 'import sys,json;m=json.loads(sys.stdin.readline());print(json.dumps({"id":m["id"],"error":{"code":-32000,"message":"Not authenticated ' + sentinel + '"}}),flush=True)'
         rpc = self.fake(script)
         try:
@@ -147,6 +149,33 @@ for line in sys.stdin:
             with self.assertRaises(ValueError): rpc.call("account/login/start", {"type": "chatgptAuthTokens", "accessToken": "PRIVATE"})
         finally: rpc.close()
         self.assertIsNotNone(rpc.process.poll())
+
+    def test_quota_request_uses_null_params_with_stable_capabilities(self):
+        # Exact contract from pinned 0.153.4 ClientRequest.json: quota params
+        # are null, not {}. Do not relax this fake to accept the old request.
+        script = '''import sys,json
+initialized=False
+for line in sys.stdin:
+ m=json.loads(line)
+ if "id" not in m: continue
+ if m["method"]=="initialize":
+  initialized=m["params"]["capabilities"]=={"experimentalApi":False}
+  print(json.dumps({"id":m["id"],"result":{}}),flush=True)
+ elif m["method"]=="account/rateLimits/read":
+  if not initialized or m.get("params","MISSING") is not None:
+   print(json.dumps({"id":m["id"],"error":{"code":-32600,"message":"Invalid request"}}),flush=True)
+  else:
+   print(json.dumps({"id":m["id"],"result":{"rateLimits":{"primary":{"usedPercent":17}}}}),flush=True)
+'''
+        rpc = self.fake(script)
+        try:
+            rpc.initialize()
+            with self.assertRaises(ProviderOperationError):
+                rpc.call("account/rateLimits/read", {})
+            result = codex_feed(rpc.call("account/rateLimits/read"))
+            self.assertEqual(result["windows"][0]["usedPercent"], 17)
+        finally:
+            rpc.close()
 
     def test_cleanup_reaps_exited_child_without_signalling(self):
         rpc = self.fake('raise SystemExit(1)')
