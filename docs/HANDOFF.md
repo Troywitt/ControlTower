@@ -1,7 +1,7 @@
 # Handoff: ControlTower Private 0.4
 
 ## Status
-- Status: partial. Actual Claude and Codex quota feed/UI comparison passed in version0.4. Gemini/Grok sign-in and live readings, plus Codex saved-login reuse, remain pending. Latest acceptance below supersedes earlier pending-Codex entries.
+- Status: partial closeout in progress for Claude and Codex only. Both actual feed/UI comparisons passed in0.4; Codex saved-login reuse now passed. Version0.4.1 is open with Claude reconnected; final Codex reconnection pending its active folder chooser. Gemini, Antigravity and Grok are deferred by explicit user instruction. Latest closeout below supersedes earlier next-provider steps.
 - Sender: Codex GPT-6 Astra, task01a0c676-576a-7512-859b-da903fee88b6; origin01a0c670-a5f0-7a31-9f26-2b459686ea85; lease run20260922T062355Z-codex-9ff5d407.
 - Written UTC: 2026-09-22.
 - Repo: /Users/troywitt/AI/Code/ControlTower; branch harden/explicit-quota-access; implementation SHA cd82b933a68a832586f630918da5770e6dd8e407. Later checkpoint commit is documentation-only.
@@ -122,3 +122,11 @@ Verification at4964a7d, cwd /Users/troywitt/AI/Code/ControlTower:
 - PASS `git diff --check`. No dashboard rebuild or repeated Swift tests needed for the Python-only fix.
 
 Status partial: startup repaired; actual Gemini Google sign-in, authenticated quota parser and feed/UI comparison remain pending. Claude/Codex live feeds, helpers and dashboard connections were untouched. No live feed writes or credential access. Root relays one next user step: reopen Start Gemini Quotas.command, complete official sign-in/trust privately, enter /model and leave its quota dialog open. Report ready only. Lease released after documentation checkpoint and push.
+
+## Claude and Codex only closeout, 2026-09-22
+
+User explicitly deferred all Google/Grok work. Antigravity discovery made no source/config/provider changes; do not resume any Google/Grok onboarding. Current repo implementationc87dacc adds only Claude/Codex refresh instructions and correct saved-login launcher guidance, release0.4.1. Exact artifact/hash and verification commands in UI-ACCEPTANCE-041.md; daily operation in CLAUDE-CODEX.md. Stable Open ControlTower Private.command validates the exact reviewed artifact rather than guessing latest build. Original app unchanged, no install/login item/global config changes.
+
+Codex saved-login reuse PASS through official quota-only read while idle singleton lock held, no new authentication and no credential inspection. New observation intentionally was not written to live feed by the bounded check. User must open Resume Codex Quotas.command once for ongoing tracking; Return refreshes and q quits. Claude is already configured and updates on normal supported statusLine activity. No model call was made to refresh. Both old live files remain correctly stale until actual provider updates.
+
+Tests/sourcegatePASS29Swift+39Python, build/signature/two-entitlementsPASS. Live0.4.1 Claude reconnected and refresh guidance verified. Codex chooser interaction paused because native control reported user changes twice; root notified to coordinate final actual folder selection. This is the only current UI verification pending. Deferred helpers/sessions untouched; never inspect or terminate them. Documentation/launcher changes owned by Codex; no unrelated changes or stashes. Lease release follows final checkpoint.

@@ -1,11 +1,11 @@
 # ControlTower Private
 
-A review fork of ControlTower with provider-owned sign-in and a sandboxed quota dashboard. **Partial: actual Claude and Codex quota display is verified in version 0.4. Gemini and Grok account enrollment and dashboard acceptance remain pending. Codex saved-login reuse remains unverified.**
+A review fork of ControlTower with provider-owned sign-in and a sandboxed quota dashboard. **Claude and Codex are verified for manual-refresh use, including Codex saved-login reuse.** See [daily use](docs/CLAUDE-CODEX.md). Other providers are deferred at the user's request; their existing implementation remains available for later review, not accepted for use.
 
 - **Claude:** official statusLine quota fields → bounded quota-only local feed. Preserves existing statusLine; user reviews/applies setup. No token copying.
 - **Codex:** user-started local helper → official signed Codex device login and `account/rateLimits/read` → quota-only feed. Separate provider home, Keychain-only requested, manual refresh, no model calls.
-- **Grok:** user-owned official CLI sign-in and `/usage` SuperGrok weekly display → strict quota-only feed. Live screen compatibility remains pending.
-- **Gemini:** user-owned official CLI sign-in and interactive `/model` screen → strict quota-only feed. Rounded tier percentages and estimated resets; no generated model prompts.
+- **Grok (deferred):** user-owned official CLI sign-in and `/usage` SuperGrok weekly display → strict quota-only feed. Live screen compatibility remains pending.
+- **Gemini (deferred):** user-owned official CLI sign-in and interactive `/model` screen → strict quota-only feed. Rounded tier percentages and estimated resets; no generated model prompts.
 - Other providers retain explanatory unavailable states and optional explicit aggregate token-count imports. Imports are not subscription quotas.
 
 Start with [PROVIDER-SETUP.md](docs/PROVIDER-SETUP.md). Read [SECURITY.md](SECURITY.md) before sign-in. No installer replaces the original app, changes Claude settings, signs in or accesses provider credentials automatically.
