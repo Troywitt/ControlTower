@@ -1,7 +1,7 @@
 # Handoff: ControlTower Private review build
 
 ## Status
-- Status: partial — implementation/synthetic verification and signed review build passed; no live credential enrollment or installed-app acceptance.
+- Status: partial — implementation/synthetic verification and signed review build passed; credential-free UI flows checked (see UI-ACCEPTANCE.md); live credential enrollment remains untested.
 - Sender / tool / run id: Codex GPT-6 Astra, task 01a0c676-576a-7512-859b-da903fee88b6.
 - Written (UTC): 2026-09-22.
 - Repo and exact checkout: `/Users/troywitt/AI/Code/ControlTower`, branch `harden/explicit-quota-access`, implementation HEAD `801ca44dcc190f9213e4a403cde2ea5a9cf4220a`. Later commit changes this verification document only.
@@ -30,7 +30,8 @@ All commands below ran in `/Users/troywitt/AI/Code/ControlTower` at implementati
 | Source boundary | PASS | `python3 Scripts/security_gate.py` | Exact endpoint set, active targets, no packages/discovery/CLI/logging and exact entitlement set |
 | Signature integrity | PASS | `codesign --verify --strict <artifact>` (called by build script) | Successful exit; subsequent entitlement and bundle gate passed |
 | Independent read-only review | PASS, bounded | Reviewer inspected active targets and packaging after fixes | Initial weak token-shape and UI revoke-race findings resolved; no new concrete source blocker in re-review. Not a whole-system audit |
-| Live Keychain / provider login / UI | NOT RUN | None | Requires user-controlled next step; no actual credentials used |
+| Credential-free native UI | PASS, bounded | Native CUA actions; see UI-ACCEPTANCE.md | Startup/cards/blank dialogs/cancel/import cancel/window reopening checked against original artifact; status-popup path unverified |
+| Live Keychain / provider login | NOT RUN | None | Requires user-controlled next step; no actual credentials used |
 
 Artifact: `.build/artifacts/review.jZomfe/ControlTower Private.app`. Pointer: `.build/artifacts/latest-path.txt`. Version 0.1.0 build 1. Info.plist `CTSourceRevision` matches implementation SHA above. Main executable SHA-256: `a1b4a64d7c927ab5376ff47973c5d979f635e2df5b1125c3caba10093f70532e`. Extracted signed entitlements in `.build/artifacts/review.jZomfe/entitlements.plist`: app-sandbox=true, files.user-selected.read-only=true, network.client=true; no other entitlements. Artifact payload gate accepted only the main executable, Info.plist and code resources; dynamic libraries are system libraries only.
 
@@ -41,15 +42,15 @@ Artifact: `.build/artifacts/review.jZomfe/ControlTower Private.app`. Pointer: `.
 - Residual risk: same-process broker, OS trust/proxies and non-zeroizable Swift token strings. TLS is standard macOS trust; no bypass/pinning or system-policy changes. Network host restriction is code-level, not an OS firewall.
 
 ## Remaining work
-- [ ] User review of draft PR/security boundary and choice to proceed to isolated UI/Keychain/live-provider acceptance.
+- [x] User-approved credential-free UI check recorded in UI-ACCEPTANCE.md (bounded PASS; status-popup path unverified).
 - [ ] Verify actual provider setup using user-controlled enrollment (no tokens in chat); inspect real usage/error UX, then assess routine signing/install.
 - Failed attempts retained: sandbox initially blocked compiler cache/dsymutil; redirected temporary caches and authorized build outside tool sandbox resolved it. CLT lacked XCTest; switched to bundled Swift Testing. SwiftUI State macro unavailable in CLT; used ObservableObject/StateObject. First artifact parser received human-readable codesign output; corrected XML export. No security checks were relaxed.
 - Blockers: no implementation blocker; live acceptance intentionally not performed.
 - **Next action:** review the prepared artifact/PR before authorizing any real-token use or installation. Do not replace `/Applications/ControlTower.app` automatically.
 
 ## Workspace state
-- Dirty or untracked files and owner: this verification document is Codex-owned until committed; all implementation committed. Build artifacts ignored.
+- Dirty or untracked files and owner: QA documentation is Codex-owned until committed; implementation unchanged. Build artifacts ignored.
 - Stash ids: None.
-- Running jobs: None after final verification.
+- Running jobs: ControlTower Private review app was left open after credential-free UI QA, disconnected with all local imports off (observed PID 46039).
 - Live data touched / snapshots: None. No credentials, auth files, cookies, transcripts, app DBs or existing app permissions accessed or changed. Only public upstream metadata/source and synthetic tests.
 - Lease: Codex acquired before edits; release at end of task after PR preparation.
