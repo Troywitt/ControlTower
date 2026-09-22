@@ -9,7 +9,8 @@ let package = Package(
     dependencies: [],
     targets: [
         .target(name: "LocalUsageCore"),
-        .executableTarget(name: "ControlTowerLocal", dependencies: ["LocalUsageCore"]),
-        .testTarget(name: "LocalUsageCoreTests", dependencies: ["LocalUsageCore"]),
+        .target(name: "LegacyUsageCore", path: "Tests/LegacyUsageCore"),
+        .executableTarget(name: "ControlTowerLocal", dependencies: ["LocalUsageCore"], exclude: ["KeychainVault.swift"]),
+        .testTarget(name: "LocalUsageCoreTests", dependencies: ["LocalUsageCore", "LegacyUsageCore"]),
     ]
 )

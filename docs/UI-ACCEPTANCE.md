@@ -1,3 +1,5 @@
+> Historical 0.1 UI evidence only. The 0.2 provider-owned setup is a different flow; this report does not establish its UI or account acceptance.
+
 # Credential-free UI acceptance — 2026-09-22
 
 Result: tested flows passed; menu-bar status-popup activation remains unverified because that surface was not exposed by the native UI tool. No code defect was confirmed and no code/entitlement/auth change was made.

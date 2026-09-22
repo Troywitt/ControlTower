@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import LocalUsageCore
+@testable import LegacyUsageCore
 
 private final class MockHTTPState: @unchecked Sendable {
     private let lock = NSLock()

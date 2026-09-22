@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import LocalUsageCore
+@testable import LegacyUsageCore
 
 private let syntheticToken = "synthetic-ONLY-test-access-token-1234567890"
 private func token(_ provider: Provider) -> String {

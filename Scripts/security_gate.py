@@ -8,20 +8,23 @@ a = p.parse_args()
 manifest = (root/'Package.swift').read_text()
 assert 'dependencies: []' in manifest
 assert '.package(' not in manifest and 'Sparkle' not in manifest
-assert re.findall(r'\.target\(name: "([^"]+)"', manifest) == ['LocalUsageCore']
+assert re.findall(r'\.target\(name: "([^"]+)"', manifest) == ['LocalUsageCore', 'LegacyUsageCore']
+assert '.executableTarget(name: "ControlTowerLocal", dependencies: ["LocalUsageCore"], exclude: ["KeychainVault.swift"])' in manifest
+assert '.target(name: "LegacyUsageCore", path: "Tests/LegacyUsageCore")' in manifest
+assert '.target(name: "LocalUsageCore"),' in manifest
 assert re.findall(r'\.executableTarget\(name: "([^"]+)"', manifest) == ['ControlTowerLocal']
-active = list((root/'Sources/LocalUsageCore').glob('*.swift')) + list((root/'Sources/ControlTowerLocal').glob('*.swift'))
+active = list((root/'Sources/LocalUsageCore').glob('*.swift')) + [f for f in (root/'Sources/ControlTowerLocal').glob('*.swift') if f.name != 'KeychainVault.swift']
 text = '\n'.join(f.read_text() for f in active)
-for forbidden in ['Process(', 'ProcessInfo.', 'URLSession.shared', 'BrowserCookie', 'Claude Code-credentials', 'auth.json', '.credentials.json', 'SecItemCopyMatching']:
+for forbidden in ['Process(', 'ProcessInfo.', 'URLSession', 'URLRequest', 'CredentialBroker', 'AccessCredential', 'BrowserCookie', 'Claude Code-credentials', 'auth.json', '.credentials.json', 'SecItemCopyMatching']:
     matches = [f for f in active if forbidden in f.read_text()]
     if forbidden == 'SecItemCopyMatching':
-        assert [f.name for f in matches] == ['KeychainVault.swift']
+        assert not matches
     else:
         assert not matches, (forbidden, matches)
 assert not re.search(r'\b(print|debugPrint|NSLog|os_log)\s*\(|\blogger\.', text)
 urls = set(re.findall(r'https?://[^"\s]+', text))
-assert urls == {'https://api.anthropic.com/api/oauth/usage','https://chatgpt.com/backend-api/wham/usage','https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota'}, urls
-expected = {'com.apple.security.app-sandbox': True, 'com.apple.security.files.user-selected.read-only': True, 'com.apple.security.network.client': True}
+assert not urls, urls
+expected = {'com.apple.security.app-sandbox': True, 'com.apple.security.files.user-selected.read-only': True}
 assert plistlib.loads((root/'ControlTower.entitlements').read_bytes()) == expected
 if a.app:
     app = pathlib.Path(a.app)
@@ -36,4 +39,4 @@ if a.app:
     assert 'Sparkle' not in libs and '@rpath' not in libs, libs
     for line in libs.splitlines()[1:]:
         assert line.strip().startswith(('/System/Library/','/usr/lib/')), line
-print('PASS: active source, dependencies, exact endpoints, identity and entitlement boundary' + ('; signed artifact verified' if a.app else ''))
+print('PASS: dashboard source has no network/credential/process path; dependencies, identity and read-only sandbox entitlement boundary' + ('; signed artifact verified' if a.app else ''))

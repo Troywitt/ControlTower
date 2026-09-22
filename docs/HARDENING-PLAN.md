@@ -1,3 +1,5 @@
+> Superseded enrollment design: version 0.2 replaces manual-token onboarding with provider-owned local quota adapters. See PROVIDER-SETUP.md and SECURITY.md. Historical plan below is retained as design history, not current acceptance.
+
 # Explicit quota access and local usage plan
 
 Scope: authorized fork, local implementation, synthetic verification, signed review artifact and PR. No live credentials, auth files, cookies, user transcripts, Keychain permissions, /Applications replacement, installation or provider sign-in.

@@ -41,3 +41,7 @@ ControlTower.app/
 # Local development tooling (not part of the public source)
 CLAUDE.md
 .claude/
+
+# Python bridge bytecode
+__pycache__/
+*.pyc

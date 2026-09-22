@@ -22,60 +22,48 @@ final class DashboardModel: ObservableObject {
     @Published var enabled: Set<Provider> = []
     @Published var snapshots: [Provider: QuotaSnapshot] = [:]
     @Published var errors: [Provider: String] = [:]
-    @Published var busy: Set<Provider> = []
     @Published var local: [Provider: [LocalUsageRow]] = [:]
     @Published var localEnabled: Set<Provider> = []
-    private let broker = CredentialBroker(vault: KeychainVault(), transport: RestrictedUsageTransport())
-    private var tasks: [Provider: Task<Void, Never>] = [:]
-    private var generation: [Provider: Int] = [:]
+    private var feedFolders: [Provider: URL] = [:]
+    private var timer: Timer?
 
-    func connect(_ provider: Provider, token: String, account: String) {
-        do {
-            let credential = try AccessCredential(token: token, accountID: account)
-            disable(provider)
-            try broker.connect(provider, credential: credential)
-            enabled.insert(provider); errors[provider] = nil
-            refresh(provider)
-        } catch { errors[provider] = (error as? SafeError ?? .credentials).localizedDescription }
-    }
-    func enableSaved(_ provider: Provider) {
-        guard !busy.contains(provider) else { return }
-        broker.enableSaved(provider)
-        enabled.insert(provider); errors[provider] = nil
+    func selectFeed(_ provider: Provider) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+        panel.message = "Choose only the dedicated ControlTower quota-feed folder, never a provider sign-in or project folder. Access ends when you disconnect or quit."
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        disable(provider)
+        guard folder.startAccessingSecurityScopedResource() else {
+            errors[provider] = "Folder access was not granted. Select the dedicated quota folder again."; return
+        }
+        feedFolders[provider] = folder
+        enabled.insert(provider)
         refresh(provider)
+        if timer == nil {
+            timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    for provider in self.enabled { self.refresh(provider) }
+                }
+            }
+        }
     }
     func refresh(_ provider: Provider) {
-        guard enabled.contains(provider), !busy.contains(provider) else { return }
-        generation[provider, default: 0] += 1
-        let version = generation[provider, default: 0]
-        busy.insert(provider)
-        tasks[provider] = Task {
-            guard generation[provider] == version, !Task.isCancelled else { return }
-            do {
-                let result = try await broker.fetch(provider)
-                guard generation[provider] == version else { return }
-                snapshots[provider] = result; errors[provider] = nil
-            } catch {
-                guard generation[provider] == version else { return }
-                snapshots[provider] = nil
-                errors[provider] = (error as? SafeError ?? .network).localizedDescription
-                enabled.remove(provider)
-            }
-            if generation[provider] == version { busy.remove(provider); tasks[provider] = nil }
+        guard enabled.contains(provider), let folder = feedFolders[provider] else { return }
+        do {
+            let result = try QuotaFeed.decode(SelectedFile.read(folder.appendingPathComponent(provider.rawValue + ".json")), provider: provider)
+            snapshots[provider] = result
+            errors[provider] = result.windows.isEmpty ? "Provider quota unavailable. Complete setup or refresh in the official provider adapter." : nil
+        } catch {
+            snapshots[provider] = nil
+            errors[provider] = "Quota feed unavailable or invalid. Waiting for the adapter; no credentials were read."
         }
     }
     func disable(_ provider: Provider) {
-        // Synchronous with UI action on the same executor: no queued revoke gap.
-        broker.disable(provider)
+        if let folder = feedFolders.removeValue(forKey: provider) { folder.stopAccessingSecurityScopedResource() }
+        enabled.remove(provider); snapshots[provider] = nil; errors[provider] = nil
         localEnabled.remove(provider); local[provider] = nil
-        enabled.remove(provider); snapshots[provider] = nil; errors[provider] = nil; busy.remove(provider)
-        generation[provider, default: 0] += 1
-        tasks.removeValue(forKey: provider)?.cancel()
-    }
-    func remove(_ provider: Provider) {
-        disable(provider)
-        do { try broker.removeSaved(provider) }
-        catch { errors[provider] = SafeError.credentials.localizedDescription }
+        if enabled.isEmpty { timer?.invalidate(); timer = nil }
     }
     func importUsage(_ provider: Provider) {
         guard localEnabled.contains(provider) else { return }
@@ -98,18 +86,17 @@ struct Dashboard: View {
                     Image(systemName: "lock.shield").font(.largeTitle).foregroundStyle(.teal)
                     VStack(alignment: .leading) {
                         Text("ControlTower Private").font(.largeTitle.bold())
-                        Text("Your provider quotas. Explicit connections. No silent credential discovery.").foregroundStyle(.secondary)
+                        Text("Provider-owned sign-in. Quota numbers stay local.").foregroundStyle(.secondary)
                     }
                 }
-                Text("Connections start off each launch. Live requests send your access token only to that provider’s usage endpoint. No telemetry, browser cookies, CLI launches or automatic updates.")
+                Text("Connections start off each launch. Select a dedicated quota-feed folder after setup. The dashboard reads only Claude/Codex quota snapshots every five seconds. It does not sign in, receive tokens, launch providers or access the network.")
                     .font(.callout).padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                 ForEach(Provider.allCases) { provider in
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text(provider.title).font(.title2.bold())
                             Spacer()
-                            if model.busy.contains(provider) { ProgressView().controlSize(.small) }
-                            Text(model.enabled.contains(provider) ? "Connected this session" : "Disconnected").foregroundStyle(.secondary)
+                            Text(model.enabled.contains(provider) ? "Watching quota feed" : "Disconnected").foregroundStyle(.secondary)
                         }
                         if let snapshot = model.snapshots[provider] {
                             ForEach(snapshot.windows) { window in
@@ -120,19 +107,21 @@ struct Dashboard: View {
                                 }
                                 if let date = window.resetsAt { Text("Resets \(date.formatted())").font(.caption).foregroundStyle(.secondary) }
                             }
-                            Text("Provider-reported usage · fetched \(snapshot.fetchedAt.formatted())").font(.caption).foregroundStyle(.secondary)
+                            Text("Provider observation · \(snapshot.fetchedAt.formatted())").font(.caption).foregroundStyle(.secondary)
+                            if Date().timeIntervalSince(snapshot.fetchedAt) > QuotaFeed.staleAfter {
+                                Text("Stale — last observation is over five minutes old. Current allowance is unknown; refresh through the provider adapter.").font(.callout).foregroundStyle(.orange)
+                            }
                         } else {
-                            Text(provider.supportsLive ? "Live subscription allowances unavailable until you explicitly connect. Local token counts cannot determine your remaining plan allowance." : provider.limitation).foregroundStyle(.secondary)
+                            Text(providerSetup(provider)).foregroundStyle(.secondary)
                         }
                         if let error = model.errors[provider] { Text(error).font(.callout).foregroundStyle(.orange) }
-                        if provider.supportsLive { HStack {
-                            Button("Connect with access token…") { viewState.connection = provider }.disabled(model.busy.contains(provider))
-                            Button("Use saved token") { model.enableSaved(provider) }.disabled(model.busy.contains(provider))
+                        if [.claude, .codex].contains(provider) { HStack {
+                            Button("Setup instructions…") { viewState.connection = provider }
+                            Button("Choose quota-feed folder…") { model.selectFeed(provider) }
                             if model.enabled.contains(provider) {
-                                Button("Refresh") { model.refresh(provider) }.disabled(model.busy.contains(provider))
+                                Button("Read snapshot") { model.refresh(provider) }
                                 Button("Disconnect") { model.disable(provider) }
                             }
-                            Menu("More") { Button("Remove saved token", role: .destructive) { model.remove(provider) } }
                         } }
                         Divider()
                         HStack {
@@ -148,42 +137,38 @@ struct Dashboard: View {
                         else { Text("Optional. Select a documented usage export; no folders or transcripts are scanned.").font(.caption).foregroundStyle(.secondary) }
                     }.padding(20).background(.background, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.quaternary))
                 }
-                Text("Security limits: tokens can carry more authority than viewing quotas. Keychain protects storage, not a compromised app or Mac. This review build uses an internal credential component, not an isolated helper process. No automatic refresh-token renewal; expired tokens require reconnecting.")
+                Text("Security boundary: the dashboard is sandboxed and has no network entitlement. User-started adapters run separately with your user permissions. Official provider software owns sign-in and its network traffic. Disconnect stops this dashboard’s file reads; quit the Codex helper separately to stop its process. Same-user malware can alter local files; these snapshots are not authenticated.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(28)
         }
-        .sheet(item: $viewState.connection) { provider in ConnectionSheet(provider: provider) { token, account in model.connect(provider, token: token, account: account) } }
+        .sheet(item: $viewState.connection) { provider in SetupSheet(provider: provider) }
     }
 }
 
-struct ConnectionSheet: View {
+func providerSetup(_ provider: Provider) -> String {
+    switch provider {
+    case .claude: "Claude Code provides official status-line quota data after a model response (supported Pro/Max versions). Setup preserves your existing status line. No Claude token is copied. Observations may be stale while Claude is idle."
+    case .codex: "A user-started helper uses official Codex device sign-in and account/rateLimits/read. Credentials stay with Codex in a separate Keychain-backed home. The helper refreshes only when you request it. Runtime enrollment is not yet verified."
+    case .gemini: "Setup blocked: official Gemini CLI exposes quota in its interactive UI, but no verified structured headless/ACP quota method. Headless /stats may send a model prompt. No credential extraction or misleading token-count substitute is enabled."
+    default: provider.limitation
+    }
+}
+
+struct SetupSheet: View {
     let provider: Provider
-    let connect: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var entry = EnrollmentState()
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Connect \(provider.title)").font(.title2.bold())
-            Text("Advanced connection: supply an existing session access token yourself. This is not a provider sign-in flow. API keys, passwords, refresh tokens and browser cookies are not supported. Format checks cannot verify token type, scope or authenticity. Endpoint compatibility has not been tested with your account.")
-            Text("Saved only in ControlTower Private’s own macOS Keychain entry. The app will not read another app’s Keychain item or sign-in file. Your token is sent to:")
-            Text(provider.endpoint?.absoluteString ?? "Unavailable").font(.caption.monospaced()).textSelection(.enabled)
-            SecureField("Session access token", text: $entry.token)
-            if provider == .codex { TextField("Optional ChatGPT account ID", text: $entry.account) }
-            if provider == .gemini {
-                TextField("Required Code Assist project ID", text: $entry.account)
-                Text("Gemini Code Assist model quotas only—not Google AI Studio API billing or a universal Gemini subscription balance.").font(.caption)
-            }
-            Toggle("I understand this token may allow more than usage reads, and authorize this provider connection.", isOn: $entry.consent)
-            Text("No token refresh or background polling. Refresh manually. Expired/rejected tokens disconnect the provider. Do not paste credentials into a chat or repository.").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("Cancel") { entry.token = ""; entry.account = ""; dismiss() }
-                Spacer()
-                Button("Save in Keychain & fetch usage") {
-                    connect(entry.token, entry.account); entry.token = ""; entry.account = ""; dismiss()
-                }.disabled(!entry.consent || entry.token.isEmpty)
-            }
+            Text("Set up \(provider.title)").font(.title2.bold())
+            Text(providerSetup(provider))
+            Text("1. Follow docs/PROVIDER-SETUP.md in the reviewed source package. Run the matching adapter yourself in Terminal; do not paste secrets into chat.")
+            Text(provider == .claude
+                 ? "2. Generate and review the statusLine patch. Apply it yourself; no existing Claude settings are changed by the generator. Continue normal Claude use to publish a quota observation."
+                 : "2. Review the signed Codex binary pin and start the helper with --login. Complete the official device sign-in yourself. The official process requests Keychain storage; no plaintext fallback is requested.")
+            Text("3. Choose the dedicated quota-feed folder in this dashboard. The card should show the provider observation time and quota percentages. Missing data stays unavailable; older observations are marked stale.")
+            Text("No account acceptance has been claimed. A folder connection alone does not prove sign-in or quota access.").font(.caption)
+            Button("Done") { dismiss() }
         }.padding(24).frame(width: 560)
-        .onDisappear { entry.token = ""; entry.account = "" }
     }
 }
 
@@ -213,11 +198,6 @@ struct LocalSummary: View {
 }
 
 @MainActor final class DashboardViewState: ObservableObject { @Published var connection: Provider? }
-@MainActor final class EnrollmentState: ObservableObject {
-    @Published var token = ""
-    @Published var account = ""
-    @Published var consent = false
-}
 @MainActor final class RateState: ObservableObject {
     @Published var inputRate = 0.0
     @Published var cachedRate = 0.0
