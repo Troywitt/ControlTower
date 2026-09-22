@@ -108,6 +108,8 @@ struct Dashboard: View {
                                 if let date = window.resetsAt { Text("\([.gemini, .grok].contains(provider) ? "Estimated reset" : "Resets") \(date.formatted())").font(.caption).foregroundStyle(.secondary) }
                             }
                             Text("Provider observation · \(snapshot.fetchedAt.formatted())").font(.caption).foregroundStyle(.secondary)
+                            if provider == .claude { Text("Updates during normal Claude Code use. Read snapshot reloads this file; it does not ask Claude for new data.").font(.caption).foregroundStyle(.secondary) }
+                            if provider == .codex { Text("Refresh: press Return in the Codex helper Terminal. Keep it open while tracking; q stops the helper. Read snapshot only reloads the saved file.").font(.caption).foregroundStyle(.secondary) }
                             if provider == .gemini { Text("Official CLI screen observation; provider data may be cached. Rounded tier usage and estimated reset times.").font(.caption).foregroundStyle(.secondary) }
                             if provider == .grok { Text("SuperGrok weekly pool observed in official CLI. Floored percentage; reset inferred from local display. Provider data may be cached.").font(.caption).foregroundStyle(.secondary) }
                             if Date().timeIntervalSince(snapshot.fetchedAt) > QuotaFeed.staleAfter {
@@ -169,7 +171,7 @@ struct SetupSheet: View {
                  ? "2. Generate and review the statusLine patch. Apply it yourself; no existing Claude settings are changed by the generator. Continue normal Claude use to publish a quota observation."
                  : provider == .gemini ? "2. Open Start Gemini Quotas.command in your own Terminal. Complete Google sign-in yourself, then enter /model at the normal prompt. Leave the quota dialog visible. Ctrl+] stops the adapter."
                  : provider == .grok ? "2. Open Start Grok Quotas.command in your private Terminal. Complete official subscription sign-in yourself, then enter /usage. Leave Usage limit visible. Ctrl+] stops the adapter."
-                 : "2. Review the signed Codex binary pin and start the helper with --login. Complete the official device sign-in yourself. The official process requests Keychain storage; no plaintext fallback is requested.")
+                 : "2. Open Resume Codex Quotas.command to reuse your saved login. For first-time setup only, use Start Codex Quotas.command and complete official device sign-in privately. Keep the helper Terminal open; Return refreshes and q stops it.")
             Text("3. Choose the dedicated quota-feed folder in this dashboard. The card should show the provider observation time and quota percentages. Missing data stays unavailable; older observations are marked stale.")
             Text("A folder connection alone does not prove quota access. Check that actual percentages and a recent observation appear.").font(.caption)
             Button("Done") { dismiss() }
