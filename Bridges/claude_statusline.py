@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 from quota_feed import MAX_INPUT, claude_feed, publish
+from claude_diagnostic import record
 
 
 def main():
@@ -24,7 +25,9 @@ def main():
     if len(raw) > MAX_INPUT:
         return 1
     try:
-        publish(args.output, claude_feed(json.loads(raw)))
+        payload = json.loads(raw)
+        record(args.output, payload)
+        publish(args.output, claude_feed(payload))
     except (ValueError, TypeError, AttributeError, OSError):
         # Replace prior quota with unavailable; do not leave a fresh-looking success.
         try:

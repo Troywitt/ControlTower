@@ -13,9 +13,34 @@ sys.path.insert(0, str(ROOT / "Bridges"))
 from quota_feed import claude_feed, codex_feed, publish
 from prepare_claude import prepare
 from codex_quota import RPC, launch
+from claude_diagnostic import record, shape
+import time
 
 
 class BridgeTests(unittest.TestCase):
+    def test_diagnostic_exports_only_fixed_shapes(self):
+        secret = "SECRET_SENTINEL_PROMPT_PATH_TOKEN"
+        payload = {secret: secret, "rate_limits": {"five_hour": {
+            "used_percentage": secret, "resets_at": secret}, "seven_day": secret}}
+        report = shape(payload)
+        self.assertNotIn(secret, json.dumps(report))
+        self.assertEqual(report["five_hour.used_percentage"], {"type": "string", "valid": False})
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            record(root, payload)
+            target = root / "claude-diagnostic.json"
+            self.assertFalse(target.exists())
+            marker = root / "claude-diagnostic.enable"
+            marker.write_text(str(time.time() + 120))
+            marker.chmod(0o600)
+            record(root, payload)
+            self.assertNotIn(secret, target.read_text())
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+            before = target.read_bytes()
+            marker.write_text(str(time.time() - 1))
+            record(root, {})
+            self.assertEqual(target.read_bytes(), before)
+
     def test_export_is_allowlist_not_input_dump(self):
         result = claude_feed({"transcript_path": "PRIVATE", "token": "PRIVATE", "rate_limits": {
             "five_hour": {"used_percentage": 23, "resets_at": 1234}, "seven_day": None}}, now=100)
