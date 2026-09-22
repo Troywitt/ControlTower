@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import pwd
 from pathlib import Path
 import subprocess
 import sys
@@ -12,14 +13,29 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "Bridges"))
 from quota_feed import claude_feed, codex_feed, publish
 from prepare_claude import prepare
-from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError, AdapterError, official_login, main
+from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError, AdapterError, official_login, main, provider_context
 from claude_diagnostic import record, shape
 import time
 
 
 class BridgeTests(unittest.TestCase):
+    def test_os_home_is_not_inherited_and_private_project_boundary_exists(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"HOME": "/untrusted-home", "CODEX_HOME": "/untrusted-codex"}):
+            state = Path(temp).resolve() / "state"
+            _, cwd, env = provider_context(Path("/verified/codex"), state)
+            self.assertEqual(env["HOME"], pwd.getpwuid(os.getuid()).pw_dir)
+            self.assertEqual(env["CODEX_HOME"], str(state / "provider-home/codex"))
+            self.assertTrue((cwd / ".git/HEAD").is_file())
+            self.assertEqual(cwd, state / "empty-workspace")
+
+    def test_existing_machine_policy_stops_before_disabling_discovery(self):
+        exists = Path.exists
+        with tempfile.TemporaryDirectory() as temp, patch.object(Path, "exists", lambda path: str(path) == "/etc/codex" or exists(path)):
+            with self.assertRaisesRegex(AdapterError, "existing machine policy requires review"):
+                provider_context(Path("/verified/codex"), Path(temp).resolve() / "state")
+
     def test_direct_enrollment_and_quota_share_private_identity(self):
-        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen:
+        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen, patch("codex_quota.subprocess.run"):
             state = Path(temp).resolve()
             popen.return_value.wait.return_value = 0
             popen.return_value.poll.return_value = 0
@@ -32,6 +48,12 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(login_args[0][:-2], quota_args[0][:-3])
             self.assertEqual(login_kwargs["env"], quota_kwargs["env"])
             self.assertEqual(login_kwargs["cwd"], quota_kwargs["cwd"])
+            self.assertEqual(login_kwargs["env"]["HOME"], pwd.getpwuid(os.getuid()).pw_dir)
+            self.assertEqual(login_kwargs["env"]["CODEX_HOME"], str(state / "provider-home/codex"))
+            for flag in ("hooks", "plugins", "apps", "shell_snapshot", "external_agent_memory_import"):
+                index = login_args[0].index(flag)
+                self.assertEqual(login_args[0][index - 1], "--disable")
+            self.assertIn("skip_host_skill_discovery", login_args[0])
             self.assertNotIn("SECRET", json.dumps(login_kwargs["env"]))
             self.assertNotIn("/outside", json.dumps(login_kwargs["env"]))
             for stream in ("stdin", "stdout", "stderr"):
@@ -42,7 +64,7 @@ class BridgeTests(unittest.TestCase):
         cases = [(1, AdapterError), (KeyboardInterrupt(), KeyboardInterrupt),
                  (subprocess.TimeoutExpired("synthetic", 660), AdapterError)]
         for outcome, expected in cases:
-            with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen, patch("codex_quota.os.killpg") as kill:
+            with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen, patch("codex_quota.subprocess.run"), patch("codex_quota.os.killpg") as kill:
                 child = popen.return_value
                 child.wait.side_effect = [outcome, 0]
                 child.poll.return_value = 1 if outcome == 1 else None
@@ -194,7 +216,7 @@ for line in sys.stdin:
         try:
             rpc.initialize()
             self.assertEqual(codex_feed(rpc.call("account/rateLimits/read"))["windows"][0]["usedPercent"], 17)
-            for method in ("turn/start", "command/exec", "account/rateLimits/consumeReset", "account/logout"):
+            for method in ("turn/start", "command/exec", "account/rateLimits/consumeReset", "account/logout", "skills/list", "hooks/list", "plugins/list", "config/read"):
                 with self.assertRaises(ValueError): rpc.call(method)
             with self.assertRaises(ValueError): rpc.call("account/login/start", {"type": "chatgptAuthTokens", "accessToken": "PRIVATE"})
         finally: rpc.close()
@@ -351,7 +373,7 @@ import time; time.sleep(20)
         finally: rpc.close()
 
     def test_launch_uses_private_environment_and_keyring(self):
-        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen:
+        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen, patch("codex_quota.subprocess.run"):
             with patch.dict(os.environ, {"OPENAI_API_KEY": "PRIVATE", "CODEX_HOME": "/existing/private", "HTTPS_PROXY": "PRIVATE"}):
                 launch(Path("/verified/codex"), Path(temp).resolve())
             args, kwargs = popen.call_args
@@ -378,7 +400,7 @@ for line in sys.stdin:
         finally: rpc.close()
 
     def test_existing_unrelated_provider_state_is_refused(self):
-        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen:
+        with tempfile.TemporaryDirectory() as temp, patch("codex_quota.subprocess.Popen") as popen, patch("codex_quota.subprocess.run"):
             root = Path(temp).resolve()
             (root / "unrelated.txt").write_text("not adapter data")
             with self.assertRaises(ValueError): launch(Path("/verified/codex"), root)

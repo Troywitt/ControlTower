@@ -21,7 +21,7 @@ Only quota percentages/reset times/provider/version/observation time leave the s
 
 ## Codex: official device login in a private terminal
 
-ControlTower's helper runs the **unmodified signed official Codex executable**, over private stdio. It has its own HOME/CODEX_HOME; no existing login discovery. The helper requests Keychain-only storage (no `auto` plaintext fallback). The official process owns auth/refresh; our code does not open tokens or credential files. Keychain persistence and actual quota access remain unverified until you run the live acceptance yourself.
+ControlTower's helper runs the **unmodified signed official Codex executable**, over private stdio. It keeps the existing private CODEX_HOME but uses the real OS HOME for macOS Keychain lookup; it does not import the normal Codex login. Normal user config is excluded by CODEX_HOME, extension discovery is restricted, and known machine policy stops setup for review. The helper requests Keychain-only storage (no `auto` plaintext fallback). The official process owns auth/refresh; our code does not open tokens or credential files. Keychain persistence and actual quota access remain unverified until you run the live acceptance yourself.
 
 The installed binary was signature-verified without executing sign-in:
 - Resolved release: `0.153.4-aarch64-apple-darwin`
@@ -36,8 +36,10 @@ open "/Users/troywitt/AI/Code/ControlTower/Bridges/Start Codex Quotas.command"
 ```
 
 2. Official Codex now runs `login --device-auth` directly. It owns the complete device flow and prints its instructions only into your private Terminal. The wrapper does not capture, parse or save this output. Complete sign-in yourself and keep this same window open. Do not share codes, callbacks or terminal screenshots. This official login has account authority beyond quota reads.
-3. Only after official login exits successfully does the launcher print **“Official CLI login exited successfully. Checking quota access next.”** It then starts the quota-only app-server in exactly the same private HOME/CODEX_HOME, with the same verified binary and keyring-only configuration. This success line proves only that the login command exited0. Acceptance still requires **“Quota snapshot published.”**, nonempty actual quota windows and a matching dashboard reading.
+3. Only after official login exits successfully does the launcher print **“Official CLI login exited successfully. Checking quota access next.”** It then starts the quota-only app-server in exactly the same real OS HOME and private CODEX_HOME, with the same verified binary and keyring-only configuration. This success line proves only that the login command exited0. Acceptance still requires **“Quota snapshot published.”**, nonempty actual quota windows and a matching dashboard reading.
 4. Select the dedicated quota-feed folder in the dashboard's Codex card. Return in Terminal refreshes; `q` or Ctrl+C stops the provider and clears the feed. Keep this Terminal open while tracking. For a later saved-login run, open `Bridges/Resume Codex Quotas.command`; it starts no login flow.
+
+The previous fully isolated HOME prevented macOS from finding its default Keychain. Read-only metadata reproduced the failure and confirmed that preserving real OS HOME fixes lookup; no Keychain was created, unlocked, changed or inspected for items. Actual token storage and quota access still need live acceptance.
 
 The feed lock spans enrollment and quota startup. Nonzero official exit, cancellation or the660-second overall login bound stops without starting the quota reader or repeating sign-in. Both clients use a minimal allowlisted environment, not inherited provider keys/proxies/config. Official output stays user-owned and may include provider error details; report only the wrapper's fixed final status. Provider-managed files/logs remain private and must not be inspected by the dashboard or wrapper. Runtime login/Keychain persistence is still unverified. The earlier app-server-managed `--login` flow remains for diagnostics but is no longer used by the Start launcher.
 

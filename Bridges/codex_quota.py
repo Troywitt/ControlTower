@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import selectors
 import signal
@@ -20,6 +21,9 @@ from quota_feed import MAX_INPUT, codex_feed, envelope, private_dir, publish
 
 ALLOWED = {"initialize", "account/login/start", "account/login/cancel", "account/rateLimits/read"}
 REQUIREMENT = 'anchor apple generic and identifier "codex" and certificate leaf[subject.OU] = "2DC432GLL2"'
+DISABLED_FEATURES = ("hooks", "plugins", "remote_plugin", "apps", "workspace_dependencies",
+                     "shell_snapshot", "shell_tool", "memories", "external_agent_memory_import",
+                     "skill_mcp_dependency_install")
 
 
 class AdapterError(ValueError):
@@ -86,6 +90,15 @@ def verify_binary(path, expected_sha):
 
 
 def provider_context(binary, state):
+    account = pwd.getpwuid(os.getuid())
+    os_home = Path(account.pw_dir)
+    if not os_home.is_absolute() or not os_home.is_dir() or os_home.stat().st_uid != os.getuid():
+        raise AdapterError("OS home metadata unavailable")
+    # Do not bypass known machine policy while disabling extension discovery.
+    policy_paths = (Path("/etc/codex"), Path("/Library/Managed Preferences/com.openai.codex.plist"),
+                    Path("/Library/Managed Preferences") / account.pw_name / "com.openai.codex.plist")
+    if any(path.exists() for path in policy_paths):
+        raise AdapterError("existing machine policy requires review")
     state = private_dir(state)
     marker = state / "controltower-adapter-v1"
     if not marker.exists():
@@ -99,12 +112,23 @@ def provider_context(binary, state):
     home = private_dir(state / "provider-home")
     codex_home = private_dir(home / "codex")
     cwd = private_dir(state / "empty-workspace")
-    # Fixed private HOME/CODEX_HOME for this child only. No inherited token,
-    # proxy, provider URL, node injection, or project-config environment values.
-    env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "CODEX_HOME": str(codex_home),
+    # Bound parent-project discovery, without loading git's real user config.
+    if (cwd / ".git").is_symlink():
+        raise AdapterError("private workspace boundary invalid")
+    if not (cwd / ".git/HEAD").exists():
+        subprocess.run(["/usr/bin/git", "init", "--quiet", "--template=", str(cwd)],
+                       env={"PATH": "/usr/bin:/bin", "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1"},
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=10)
+    # macOS resolves the default Keychain through the real OS HOME. Retain it
+    # only for the provider, while CODEX_HOME remains exactly the private path.
+    # Never inherit environment credentials/proxies or launch a shell.
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(os_home), "CODEX_HOME": str(codex_home),
            "TMPDIR": str(private_dir(state / "tmp")), "LANG": "en_US.UTF-8"}
     command = [str(binary), "-c", 'cli_auth_credentials_store="keyring"',
                "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false"]
+    for feature in DISABLED_FEATURES:
+        command.extend(["--disable", feature])
+    command.extend(["--enable", "skip_host_skill_discovery"])
     return command, cwd, env
 
 
