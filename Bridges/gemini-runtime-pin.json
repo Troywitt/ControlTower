@@ -1,0 +1,7 @@
+{
+  "version": "0.60.0",
+  "npmTree": "bf73d502b3700703f42bf1e8b77ec89b933712467b6a2f49575e23618d3dabc8",
+  "pythonTree": "b9bcf98b1450d4f8c22e7be1f195cfdb97ac970b8602cdf26b1c6b217983a536",
+  "node": "/usr/local/bin/node",
+  "nodeSha256": "29ecb10b64e8de28f5073f0b91f2fdc9ee60a0e21995edfcacb02eb0aae01a79"
+}

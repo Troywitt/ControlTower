@@ -1,175 +1,22 @@
-# Control Tower
+# ControlTower Private
 
-A unified macOS menu bar app for monitoring AI coding assistant usage across multiple providers.
+A review fork of ControlTower with provider-owned sign-in and a sandboxed quota dashboard. **Claude and Codex are verified for manual-refresh use, including Codex saved-login reuse.** See [daily use](docs/CLAUDE-CODEX.md). Other providers are deferred at the user's request; their existing implementation remains available for later review, not accepted for use.
 
-<p align="center">
-  <img src="https://krishcdbry.com/images/control-tower.png" alt="Control Tower" width="800">
-</p>
+- **Claude:** official statusLine quota fields → bounded quota-only local feed. Preserves existing statusLine; user reviews/applies setup. No token copying.
+- **Codex:** user-started local helper → official signed Codex device login and `account/rateLimits/read` → quota-only feed. Separate provider home, Keychain-only requested, manual refresh, no model calls.
+- **Grok (deferred):** user-owned official CLI sign-in and `/usage` SuperGrok weekly display → strict quota-only feed. Live screen compatibility remains pending.
+- **Gemini (deferred):** user-owned official CLI sign-in and interactive `/model` screen → strict quota-only feed. Rounded tier percentages and estimated resets; no generated model prompts.
+- Other providers retain explanatory unavailable states and optional explicit aggregate token-count imports. Imports are not subscription quotas.
 
-## Supported Providers
-
-| Provider | Auth Method | Features |
-|----------|-------------|----------|
-| **Claude** | OAuth/CLI | Session, Weekly, Opus limits |
-| **Codex** | OAuth | Session, Weekly limits |
-| **Cursor** | Browser cookies | Credits tracking |
-| **Gemini** | OAuth/API Key | Pro, Flash model quotas |
-| **Copilot** | GitHub CLI | Subscription status |
-| **Antigravity** | Local process | Claude, Gemini Pro/Flash quotas |
-
-## Installation
-
-### Homebrew (Recommended)
+Start with [PROVIDER-SETUP.md](docs/PROVIDER-SETUP.md). Read [SECURITY.md](SECURITY.md) before sign-in. No installer replaces the original app, changes Claude settings, signs in or accesses provider credentials automatically.
 
 ```bash
-brew tap krishcdbry/tap
-brew trust krishcdbry/tap   # Homebrew 5+ requires trusting third-party taps
-brew install --cask control-tower
+Scripts/test_private.sh
+Scripts/build_private.sh
 ```
 
-On Homebrew 4 and earlier, skip the `brew trust` line.
+The build writes a fresh `ControlTower Private.app` under `.build/artifacts/`; it does not launch or install it. The dashboard has only App Sandbox and user-selected read-only file entitlements. Adapters in `Bridges/` run separately under user control; they are not protected by the dashboard's sandbox. Setup requires Python 3 and the reviewed official Codex binary. Gemini also uses an app-local pinned npm runtime and Python terminal parser; see setup instructions. This remains a review workflow, not one-click onboarding.
 
-Upgrading from an earlier version:
+Historical upstream sources are excluded. The previous manual-token core is in a separate test-only target and is not shipped in the dashboard. `KeychainVault.swift` is excluded from the executable. The UI has no secret entry or direct provider request path. Previous credential-free UI evidence in `docs/UI-ACCEPTANCE.md` applies to version 0.1 only.
 
-```bash
-brew trust krishcdbry/tap   # once, if brew reports the cask as not found in source
-brew upgrade --cask control-tower
-```
-
-### Manual Installation
-
-1. Download the latest release from [Releases](https://github.com/krishcdbry/ControlTower/releases)
-2. Move `Control Tower.app` to `/Applications`
-3. Launch from Applications or Spotlight
-
-### Build from Source
-
-Requirements:
-- macOS 14.0+
-- Xcode 16+ or Swift 6.0+
-
-```bash
-git clone https://github.com/krishcdbry/ControlTower.git
-cd ControlTower
-swift build -c release
-```
-
-## Usage
-
-### Menu Bar
-
-Control Tower lives in your menu bar. Click the icon to see:
-- Usage overview for all enabled providers
-- Quick access to provider dashboards
-- Refresh button to update all providers
-
-### CLI Tool
-
-Control Tower includes a CLI tool `ct` for terminal usage:
-
-```bash
-# Show status of all providers
-ct status
-
-# List available providers
-ct list
-
-# Get help
-ct --help
-```
-
-### Provider Setup
-
-#### Claude
-Requires Claude CLI to be installed and logged in:
-```bash
-# Install Claude CLI (if not already installed)
-npm install -g @anthropic-ai/claude-code
-
-# Authenticate
-claude
-```
-
-#### Codex
-Requires Codex CLI to be installed and logged in:
-```bash
-# Authenticate with Codex
-codex
-```
-
-#### Cursor
-Automatically imports cookies from supported browsers:
-- Safari, Chrome, Edge, Brave, Arc, Firefox, Vivaldi, Zen
-
-Just sign in to cursor.com in any supported browser.
-
-#### Gemini
-**Option 1: OAuth (Recommended)**
-```bash
-# Install Gemini CLI
-npm install -g @google/gemini-cli
-
-# Authenticate
-gemini
-```
-
-**Option 2: API Key**
-```bash
-export GEMINI_API_KEY="your-api-key"
-```
-
-#### Copilot
-Requires GitHub CLI to be installed:
-```bash
-# Install GitHub CLI
-brew install gh
-
-# Authenticate
-gh auth login
-```
-
-#### Antigravity
-Launch the Antigravity app and sign in with your Google account. Control Tower will automatically detect the running process.
-
-## Features
-
-- **Real-time Usage Monitoring**: Track usage limits across all AI coding assistants
-- **Smart Notifications**: Get alerts when approaching quota limits
-- **Multi-Account Support**: Manage multiple accounts per provider
-- **Cost Tracking**: Monitor estimated costs for token-based providers
-- **Analytics**: View usage trends over time
-- **Quiet Hours**: Configure Do Not Disturb periods
-- **Auto-refresh**: Automatic periodic usage updates
-
-## Configuration
-
-Preferences can be accessed from the menu bar:
-- **General**: Refresh interval, launch at login
-- **Providers**: Enable/disable providers, configure auth
-- **Notifications**: Threshold alerts, quiet hours
-- **Analytics**: Usage history, cost reports
-
-## Requirements
-
-- macOS 14.0 (Sonoma) or later
-- Apple Silicon or Intel Mac
-
-## Privacy
-
-Control Tower:
-- Does not collect or transmit any user data
-- All credentials are stored locally in system keychain
-- Only communicates with official provider APIs
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
-
-## Support
-
-- [Issues](https://github.com/krishcdbry/ControlTower/issues)
-- [Discussions](https://github.com/krishcdbry/ControlTower/discussions)
+Fork base: upstream v1.1.0 (`9b9afbfd978500cbf10f0e7b50efcd8b56b44304`). Original license/attribution retained.

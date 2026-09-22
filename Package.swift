@@ -1,61 +1,16 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// Deliberately isolated from the historical upstream Sources/ControlTower* trees.
 let package = Package(
-    name: "ControlTower",
-    platforms: [
-        .macOS(.v14),
-    ],
-    products: [
-        .executable(name: "ControlTower", targets: ["ControlTower"]),
-        .executable(name: "ct", targets: ["ControlTowerCLI"]),
-        .library(name: "ControlTowerCore", targets: ["ControlTowerCore"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.0"),
-        .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
-        .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
-    ],
+    name: "ControlTowerLocal",
+    platforms: [.macOS(.v14)],
+    products: [.executable(name: "ControlTowerLocal", targets: ["ControlTowerLocal"])],
+    dependencies: [],
     targets: [
-        // Core library (cross-platform where possible)
-        .target(
-            name: "ControlTowerCore",
-            dependencies: [
-                .product(name: "GRDB", package: "GRDB.swift"),
-                .product(name: "Logging", package: "swift-log"),
-            ]
-        ),
-
-        // macOS menu bar app
-        .executableTarget(
-            name: "ControlTower",
-            dependencies: [
-                "ControlTowerCore",
-                .product(name: "Sparkle", package: "Sparkle"),
-            ],
-            path: "Sources/ControlTower",
-            resources: [
-                .process("Resources"),
-            ],
-            swiftSettings: [
-                .define("ENABLE_SPARKLE"),
-            ]
-        ),
-
-        // CLI tool
-        .executableTarget(
-            name: "ControlTowerCLI",
-            dependencies: [
-                "ControlTowerCore",
-            ],
-            path: "Sources/ControlTowerCLI"
-        ),
-
-        // Tests
-        .testTarget(
-            name: "ControlTowerCoreTests",
-            dependencies: ["ControlTowerCore"],
-            path: "Tests/ControlTowerCoreTests"
-        ),
+        .target(name: "LocalUsageCore"),
+        .target(name: "LegacyUsageCore", path: "Tests/LegacyUsageCore"),
+        .executableTarget(name: "ControlTowerLocal", dependencies: ["LocalUsageCore"], exclude: ["KeychainVault.swift"]),
+        .testTarget(name: "LocalUsageCoreTests", dependencies: ["LocalUsageCore", "LegacyUsageCore"]),
     ]
 )
