@@ -22,6 +22,30 @@ ALLOWED = {"initialize", "account/login/start", "account/login/cancel", "account
 REQUIREMENT = 'anchor apple generic and identifier "codex" and certificate leaf[subject.OU] = "2DC432GLL2"'
 
 
+class ProviderOperationError(ValueError):
+    """Only a fixed category survives; never retain the provider error body."""
+    def __init__(self, error):
+        message = error.get("message", "") if isinstance(error, dict) else ""
+        message = message.lower() if isinstance(message, str) else ""
+        code = error.get("code") if isinstance(error, dict) else None
+        if any(term in message for term in ("keyring", "keychain", "credential store")):
+            category = "credential storage unavailable"
+        elif any(term in message for term in ("not authenticated", "not logged in", "requires authentication", "requires chatgpt", "missing access token", "unauthorized", "401")):
+            category = "saved login unavailable or rejected"
+        elif any(term in message for term in ("forbidden", "403")):
+            category = "provider access denied"
+        elif any(term in message for term in ("429", "too many requests")):
+            category = "provider rate limited"
+        elif any(term in message for term in ("timed out", "timeout", "connect", "dns")):
+            category = "provider connection unavailable"
+        elif type(code) is int and code in (-32600, -32601, -32602):
+            category = "provider protocol incompatible"
+        else:
+            category = "provider request rejected"
+        self.category = category
+        super().__init__(category)
+
+
 def acquire_feed_lock(output):
     fd = os.open(output / ".codex-adapter.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     lock = os.fdopen(fd, "w")
@@ -131,8 +155,10 @@ class RPC:
             message = self.receive(deadline)
             self.notification(message)
             if message.get("id") == expected:
-                if "error" in message or "result" not in message:
-                    raise ValueError("Provider operation failed")
+                if "error" in message:
+                    raise ProviderOperationError(message["error"])
+                if "result" not in message:
+                    raise ValueError("Missing provider result")
                 return message["result"]
 
     def initialize(self):
@@ -231,13 +257,18 @@ def main():
             print("Provider reported login complete.")
         while True:
             stage = "quota read"
-            publish(output, codex_feed(rpc.call("account/rateLimits/read")))
-            print("Quota snapshot published. Return refreshes; q quits and stops this provider process.")
+            payload = rpc.call("account/rateLimits/read")
+            stage = "quota decoding"
+            snapshot = codex_feed(payload)
+            del payload
+            publish(output, snapshot)
+            print("Quota snapshot published. Return refreshes; q quits and stops this provider process." if snapshot["windows"] else
+                  "Provider returned no quota windows. Return retries; q quits. No usage is available yet.")
             if input().strip().lower() == "q":
                 break
     except (Exception, KeyboardInterrupt) as error:
         # Do not expose raw provider errors, auth URLs, file contents or tracebacks.
-        category = "cancelled" if isinstance(error, KeyboardInterrupt) else "timeout" if isinstance(error, TimeoutError) else "unavailable"
+        category = error.category if isinstance(error, ProviderOperationError) else "cancelled" if isinstance(error, KeyboardInterrupt) else "timeout" if isinstance(error, TimeoutError) else "unavailable"
         print("Adapter stopped at " + stage + " (" + category + "). No token fallback was attempted.", file=sys.stderr)
         return 1
     finally:

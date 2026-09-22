@@ -53,3 +53,7 @@ All commands below ran in /Users/troywitt/AI/Code/ControlTower.
 - Running jobs: live ControlTower Private0.2 watches Claude. QA0.4 closed. No provider auth terminals inspected; user owns their lifecycle.
 - Live data: only allowlisted dedicated quota feed; latest Codex feed absent. No synthetic data written into live folder. No auth/transcript data copied to repository or PR.
 - Lease: release after final checkpoint/push; acquire afresh before any later edit.
+
+## Latest Codex live attempt, 2026-09-22
+
+User completed device sign-in and reported publication, but the bounded feed check found empty windows and no helper lock owner. A subsequent user-owned saved-login run failed at quota read (unavailable). Account acceptance is still pending; do not claim login persistence passed. Added fixed-category provider failure reporting, distinct quota-read/decoding stages, honest empty-window messaging, and Resume Codex Quotas.command without --login. Raw provider errors remain private and are never printed/saved. Next action: user runs Resume and reports only the fixed status line. Python bridge suite PASS (29 tests), including error-category secret sentinel and real-pipe failure tests; log /tmp/controltower-codex-diagnostic-tests.log. Dashboard executable unchanged.

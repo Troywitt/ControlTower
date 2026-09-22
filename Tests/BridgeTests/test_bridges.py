@@ -12,12 +12,33 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "Bridges"))
 from quota_feed import claude_feed, codex_feed, publish
 from prepare_claude import prepare
-from codex_quota import RPC, launch, acquire_feed_lock
+from codex_quota import RPC, launch, acquire_feed_lock, ProviderOperationError
 from claude_diagnostic import record, shape
 import time
 
 
 class BridgeTests(unittest.TestCase):
+    def test_provider_errors_export_only_fixed_categories(self):
+        sentinel = "SECRET_SENTINEL_ACCOUNT_AUTH_URL"
+        cases = [("Not authenticated", "saved login unavailable or rejected"),
+                 ("Keychain failed", "credential storage unavailable"),
+                 ("HTTP 403", "provider access denied"),
+                 ("HTTP 429", "provider rate limited"),
+                 ("DNS failed", "provider connection unavailable"),
+                 ("unexpected", "provider request rejected")]
+        for message, category in cases:
+            error = ProviderOperationError({"message": message + sentinel, "data": sentinel})
+            self.assertEqual(str(error), category)
+            self.assertNotIn(sentinel, repr(vars(error)) + repr(error))
+        self.assertEqual(str(ProviderOperationError({"code": -32602})), "provider protocol incompatible")
+        script = 'import sys,json;m=json.loads(sys.stdin.readline());print(json.dumps({"id":m["id"],"error":{"code":-32000,"message":"Not authenticated ' + sentinel + '"}}),flush=True)'
+        rpc = self.fake(script)
+        try:
+            with self.assertRaisesRegex(ProviderOperationError, "saved login unavailable or rejected"):
+                rpc.call("account/rateLimits/read")
+        finally:
+            rpc.close()
+
     def test_codex_single_writer(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
