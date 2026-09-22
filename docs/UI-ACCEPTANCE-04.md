@@ -1,6 +1,6 @@
 # UI acceptance: 0.4 review build
 
-Status: synthetic UI PASS; actual Codex/Gemini/Grok account acceptance pending.
+Status: synthetic UI PASS; actual Claude/Codex feed and UI comparison PASS. Gemini/Grok account acceptance and Codex saved-login reuse remain pending.
 
 Implementation SHA: `cd82b933a68a832586f630918da5770e6dd8e407`.
 Artifact: `.build/artifacts/review.vw8Bwv/ControlTower Private.app`.
@@ -18,7 +18,7 @@ Commands in `/Users/troywitt/AI/Code/ControlTower` at that implementation SHA:
 Native QA used a separately identified, re-signed copy
 `com.bodie.controltower.quota-qa04`; only its dedicated synthetic folder was
 selected. Its executable hash differs because signing embeds the QA identity.
-The release artifact above was not overwritten or launched.
+The release artifact above was not overwritten or launched during synthetic QA.
 
 Observed PASS:
 - Grok starts disconnected and says live sign-in/parser acceptance is pending.
@@ -36,6 +36,25 @@ select() argument. The test must drain the simulated terminal during exit so
 macOS terminal restoration can finish. Earlier direct Gemini startup evidence
 bypassed the wrapper and did not establish that wrapper's runtime correctness.
 
-Actual Claude acceptance remains the observed 0.2 session. The working live0.2
-app was untouched. No actual account feed is substituted with fixture data.
-Codex/Gemini/Grok require user-owned sign-in and matching real UI readings.
+## Actual Claude and Codex acceptance, 2026-09-22
+
+At adapter SHA `e3ab9ae`, a bounded Python read of only the dedicated
+`quota-feed/{claude,codex}.json` files validated their strict schema, percentages,
+reset timestamps and observation age. The Codex helper lock was active. No
+provider refresh, login retry, credential inspection or helper termination was
+performed. The user had reported successful official login and publication.
+
+Native app control then quit version 0.2, launched the release artifact above
+after rechecking its version and exact executable hash, and reconnected Claude
+and Codex to the same actual quota-only folder through the file picker.
+Accessibility inspection confirmed PASS: both cards said Watching quota feed;
+Claude Session/Weekly and Codex Primary percentages and resets matched the
+validated files. Both observations were over five minutes old by the UI check,
+and both correctly displayed Stale. No current allowance or network freshness
+is claimed. Personal quota amounts are intentionally omitted from this record.
+
+Only Codex Primary was supplied; no Secondary or window duration was inferred.
+This establishes actual authenticated quota publication and dashboard display,
+not persisted-login reuse after restart. The active helper was preserved.
+Gemini/Grok remain disconnected pending user-owned sign-in and live comparison.
+No actual account feed was substituted with fixture data.

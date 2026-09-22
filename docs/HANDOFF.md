@@ -1,7 +1,7 @@
 # Handoff: ControlTower Private 0.4
 
 ## Status
-- Status: partial. Claude real-account acceptance passed previously; Codex/Gemini/Grok sign-in and live readings remain pending.
+- Status: partial. Actual Claude and Codex quota feed/UI comparison passed in version0.4. Gemini/Grok sign-in and live readings, plus Codex saved-login reuse, remain pending. Latest acceptance below supersedes earlier pending-Codex entries.
 - Sender: Codex GPT-6 Astra, task01a0c676-576a-7512-859b-da903fee88b6; origin01a0c670-a5f0-7a31-9f26-2b459686ea85; lease run20260922T062355Z-codex-9ff5d407.
 - Written UTC: 2026-09-22.
 - Repo: /Users/troywitt/AI/Code/ControlTower; branch harden/explicit-quota-access; implementation SHA cd82b933a68a832586f630918da5770e6dd8e407. Later checkpoint commit is documentation-only.
@@ -11,7 +11,7 @@
 ## Read first
 1. Never inspect auth files, Keychain tokens, provider terminal contents, raw statusLine input, transcripts, codes or callback URLs. User owns sign-in/trust/MFA. Only dedicated quota JSON can be read.
 2. Acquire/check repo lease before editing. Never edit .claude, global CLAUDE.md, Meta or others' files.
-3. Recheck checkout/status and preserve working live0.2 Claude dashboard.
+3. Recheck checkout/status and preserve working live0.4 Claude/Codex dashboard and active Codex helper.
 
 ## What changed and why
 - Added Grok1.0.40 official CLI adapter for SuperGrok weekly subscription usage. Signature/hash pin, private provider home, empty Git workspace, telemetry/updates/cross-tool discovery off, bounded official configuration preflight. No API-spend substitution or model prompts.
@@ -99,3 +99,13 @@ Isolation evidence: pinned official CLI featureslist confirms requested flags; a
 Public audit revision94174e44cbc54cece45f6052328ca0c2cd7a8a2a under ignored .build/codex-public-audit provides supporting source, not exact pinned-binary provenance. No credential-bearing profile/source/log was uploaded.
 
 Validation: `python3 -m unittest discover -s Tests/BridgeTests -v` in /Users/troywitt/AI/Code/ControlTower PASS38 tests, log/tmp/controltower-home-fix-tests.log. New regressions cover OS-derived HOME against inherited poisoning, exact privateCODEX_HOME parity, Git root creation, known-policy stop, feature flags and expanded RPC denials. Corrected-env security metadata checkPASS without provider authentication. Dashboard and Claude unchanged. Actual login storage and nonemptyquota/UI acceptance still pending. Next action is the same Start launcher with the VERIFIED changed environment, private user device sign-in, keep Terminal open; root relays only that step.
+
+## Actual Codex acceptance and live dashboard switch, 2026-09-22
+
+Status remains partial overall. Adapter state e3ab9ae produced a valid nonempty actual Codex quota feed after user-reported official sign-in/publication. A bounded Python strict-schema read of only dedicated Claude/Codex quota JSON in /Users/troywitt/AI/Code/ControlTower confirmed allowed percentages, resets and observation ages; a nonblocking lock check confirmed the Codex helper active. Native CUA accessibility comparison PASS: verified release0.4 artifact/hash from UI-ACCEPTANCE-04.md displayed matching actual Claude Session/Weekly and Codex Primary values/resets. Both correctly displayed stale once their observations exceeded five minutes. Personal amounts omitted from public evidence. Only Primary was supplied; duration and Secondary were not inferred.
+
+Version0.2 was quit and version0.4 launched, then both actual quota-folder connections were restored. The original installed app, provider credentials, Claude statusLine and active Codex helper were untouched. No provider refresh/restart or sign-in retry occurred. No claim of saved-login persistence or currently fresh allowance is made. Earlier unavailable/login failures above remain historical evidence, superseded only for actual feed/UI acceptance.
+
+Workspace: documentation-only acceptance update; no unrelated dirty files, no stashes, no live feed writes. Active jobs: reviewed private dashboard0.4 and user-owned Codex helper. User stops that helper with q; preserve it during remaining setup. Lease released after checkpoint commit.
+
+Next single user step: open Bridges/Start Gemini Quotas.command in a private Terminal, complete official Google sign-in/trust personally, then enter /model and leave its quota dialog open. Origin task relays this; do not capture the Terminal or generate a model prompt. Verify only the sanitized Gemini feed and matching dashboard next. Grok remains later; Codex saved-login reuse remains separately unverified.
