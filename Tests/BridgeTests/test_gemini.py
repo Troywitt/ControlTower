@@ -13,7 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "Bridges"))
 sys.path.insert(0, str(ROOT / ".build/gemini-python"))
-from gemini_quota import parse_screen, prepare_state, acquire_feed_lock, stop
+from gemini_quota import parse_screen, prepare_state, acquire_feed_lock, stop, observer_screen
 import pyte
 
 
@@ -26,7 +26,8 @@ class GeminiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
             output, state = root / "feed", root / "state"
-            loading = "\x1b[2J\x1b[HSelect Model\r\nLoading quotas\r\n(Press Esc to close)"
+            # Actual official CLI startup query that pyte's plain Screen rejects.
+            loading = "\x1b[>4;?m\x1b[2J\x1b[HSelect Model\r\nLoading quotas\r\n(Press Esc to close)"
             ready = "\x1b[2J\x1b[H" + "\r\n".join(screen(["Pro ▬▬▬▬ 12%"]))
             fake = "import sys,time;sys.stdout.write(" + repr(loading) + ");sys.stdout.flush();time.sleep(1.2);sys.stdout.write(" + repr(ready) + ");sys.stdout.flush();time.sleep(1.2);sys.stdout.write(" + repr(ready) + ");sys.stdout.flush();time.sleep(30)"
             code = ("import sys;from pathlib import Path;sys.path.insert(0," + repr(str(ROOT / "Bridges")) + ");"
@@ -113,6 +114,27 @@ class GeminiTests(unittest.TestCase):
         self.assertEqual(parse_screen(target.display, 1000)["windows"][0]["usedPercent"], 12)
         stream.feed(b"\x1b[2J\x1b[HLogin with Google")
         self.assertIsNone(parse_screen(target.display, 1001))
+
+    def test_private_keyboard_query_preserves_screen_and_generates_no_input(self):
+        query = b"\x1b[>4;?m"
+        # Document the pinned dependency failure independently of our adapter.
+        with self.assertRaises(TypeError):
+            pyte.ByteStream(pyte.Screen(140, 60)).feed(query)
+        payload = ("\x1b[32m" + "\r\n".join(screen(["Pro ▬▬▬▬ 12%"])) + "\x1b[0m").encode()
+        for split in range(len(query) + 1):
+            target = observer_screen(pyte)
+            stream = pyte.ByteStream(target)
+            stream.feed(payload)
+            before, attrs = target.display, target.cursor.attrs
+            with patch.object(target, "write_process_input") as reply:
+                stream.feed(query[:split])
+                stream.feed(query[split:])
+                reply.assert_not_called()
+            self.assertEqual(target.display, before)
+            self.assertEqual(target.cursor.attrs, attrs)
+            self.assertEqual(parse_screen(target.display, 1000)["windows"][0]["usedPercent"], 12)
+            stream.feed(b"\x1b[31m")
+            self.assertEqual(target.cursor.attrs.fg, "red")
 
     def test_isolation_and_no_telemetry(self):
         with tempfile.TemporaryDirectory() as temp:

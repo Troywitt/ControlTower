@@ -163,6 +163,21 @@ def acquire_feed_lock(output, provider="gemini"):
         raise
 
 
+def observer_screen(pyte):
+    class QuotaScreen(pyte.Screen):
+        def select_graphic_rendition(self, *attrs, private=False):
+            # Gemini asks the real terminal about modifyOtherKeys with
+            # CSI > 4 ; ? m. pyte 0.8.2 dispatches this as private SGR,
+            # but Screen's SGR method rejects the private keyword. This is
+            # a capability query, not a change to the observed text/colors.
+            # Original bytes still pass to the user's terminal; never reply
+            # from the observer or suppress arbitrary parser exceptions.
+            if not private:
+                super().select_graphic_rendition(*attrs)
+
+    return QuotaScreen(140, 60)
+
+
 def main(*, provider="gemini", verify=verify_runtime, prepare=prepare_state,
          parse=parse_screen, dialog_label="Select Model", command=None, notice=None):
     parser = argparse.ArgumentParser()
@@ -205,7 +220,7 @@ def main(*, provider="gemini", verify=verify_runtime, prepare=prepare_state,
         child = subprocess.Popen(argv,
                                  stdin=slave, stdout=slave, stderr=slave, cwd=cwd, env=env, start_new_session=True)
         os.close(slave)
-        screen = pyte.Screen(140, 60)
+        screen = observer_screen(pyte)
         stream = pyte.ByteStream(screen)
         stage = "private terminal input setup"
         original = termios.tcgetattr(sys.stdin.fileno())
